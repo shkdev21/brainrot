@@ -10,6 +10,7 @@ import {
   CARPET_CAP, CARPET_TTL_MS, WALK_MS, nextSpawnDelayMs,
   playerIncomePerSec, ownedCount,
 } from './Economy';
+import { updateCarry, updateDropped } from './Carry';
 
 // Game — 월드 시뮬레이션 허브. 20Hz 고정 스텝 tick.
 
@@ -119,6 +120,8 @@ export class Game {
     this.updateIncome(now, prev);
     this.updateArrivals(now);
     this.updateExpiry(now);
+    updateCarry(this, dtMs);
+    updateDropped(this);
   }
 
   private updateSpawns(now: number): void {
