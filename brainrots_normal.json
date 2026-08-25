@@ -1,0 +1,541 @@
+[
+ {
+  "en": "1",
+  "kr": "나무위키",
+  "rarity": "일반 / Common",
+  "income": "$1",
+  "price": "$25"
+ },
+ {
+  "en": "Lirilì Larilà",
+  "kr": "리릴리 라릴라",
+  "rarity": "일반 / Common",
+  "income": "$3",
+  "price": "$250"
+ },
+ {
+  "en": null,
+  "kr": "[1]",
+  "rarity": "일반 / Common",
+  "income": "$5",
+  "price": "$500"
+ },
+ {
+  "en": "John Pork",
+  "kr": "[3]",
+  "rarity": "일반 / Common",
+  "income": "$7",
+  "price": "$750"
+ },
+ {
+  "en": "Talpa Di Fero",
+  "kr": "탈파 디 페로",
+  "rarity": "일반 / Common",
+  "income": "$9",
+  "price": "$1K"
+ },
+ {
+  "en": "Svinina Bombardino",
+  "kr": "스비니나 봄바르디노",
+  "rarity": "일반 / Common",
+  "income": "$10",
+  "price": "$1.2K"
+ },
+ {
+  "en": "Pipi Kiwi",
+  "kr": "피피 키위",
+  "rarity": "일반 / Common",
+  "income": "$13",
+  "price": "$1.5K"
+ },
+ {
+  "en": "Trippi Troppi",
+  "kr": "트리피 트로피",
+  "rarity": "희귀 / Rare",
+  "income": "$15",
+  "price": "$2K"
+ },
+ {
+  "en": "Gangster Footera",
+  "kr": "갱스터 푸테라",
+  "rarity": "희귀 / Rare",
+  "income": "$30",
+  "price": "$4K"
+ },
+ {
+  "en": "Bandito Bobritto",
+  "kr": "[4]",
+  "rarity": "희귀 / Rare",
+  "income": "$35",
+  "price": "$4.5K"
+ },
+ {
+  "en": "Boneca Ambalabu",
+  "kr": "보네카 암발라부",
+  "rarity": "희귀 / Rare",
+  "income": "$40",
+  "price": "$5K"
+ },
+ {
+  "en": "Cacto Hipopotamo",
+  "kr": "칵토 히포포타모",
+  "rarity": "희귀 / Rare",
+  "income": "$50",
+  "price": "$6.5K"
+ },
+ {
+  "en": "Ta Ta Ta Ta Sahur",
+  "kr": "타 타 타 타 사후르",
+  "rarity": "희귀 / Rare",
+  "income": "$55",
+  "price": "$7.5K"
+ },
+ {
+  "en": "Tric Trac Baraboom",
+  "kr": "트릭 트랙 바라붐",
+  "rarity": "희귀 / Rare",
+  "income": "$65",
+  "price": "$9K"
+ },
+ {
+  "en": "Cappuccino Assassino",
+  "kr": "카푸치노 아사시노",
+  "rarity": "에픽 / Epic",
+  "income": "$75",
+  "price": "$10K"
+ },
+ {
+  "en": "Brr Brr Patapim",
+  "kr": "[6]",
+  "rarity": "에픽 / Epic",
+  "income": "$100",
+  "price": "$15K"
+ },
+ {
+  "en": "Avocadini Antilopini",
+  "kr": "아보카디니 안틸로피니",
+  "rarity": "에픽 / Epic",
+  "income": "$115",
+  "price": "$17.5K"
+ },
+ {
+  "en": "Trulimero Trulicina",
+  "kr": "트룰리메로 트룰리치나",
+  "rarity": "에픽 / Epic",
+  "income": "$125",
+  "price": "$20K"
+ },
+ {
+  "en": "Bambini Crostini",
+  "kr": "밤비니 크로스티니",
+  "rarity": "에픽 / Epic",
+  "income": "$135",
+  "price": "$22.5K"
+ },
+ {
+  "en": "Bananita Dolphinita",
+  "kr": "바나니타 돌피니타",
+  "rarity": "에픽 / Epic",
+  "income": "$150",
+  "price": "$25K"
+ },
+ {
+  "en": "Perochello Lemonchello",
+  "kr": "페로첼로 레몬첼로",
+  "rarity": "에픽 / Epic",
+  "income": "$160",
+  "price": "$27.5K"
+ },
+ {
+  "en": "Brri Brri Bicus Dicus Bombicus",
+  "kr": "브리 브리 비쿠스 디쿠스 봄비쿠스",
+  "rarity": "에픽 / Epic",
+  "income": "$175",
+  "price": "$30K"
+ },
+ {
+  "en": "Avocadini Guffo",
+  "kr": "아보카디니 구포",
+  "rarity": "에픽 / Epic",
+  "income": "$225",
+  "price": "$35K"
+ },
+ {
+  "en": "Salamino Penguino",
+  "kr": "[7]",
+  "rarity": "에픽 / Epic",
+  "income": "$250",
+  "price": "$40K"
+ },
+ {
+  "en": null,
+  "kr": null,
+  "rarity": "에픽 / Epic",
+  "income": "$275",
+  "price": "$42.5K"
+ },
+ {
+  "en": "Burbaloni Loliloli",
+  "kr": "부르발로니 룰릴롤리",
+  "rarity": "전설 / Legendary",
+  "income": "$200",
+  "price": "$35K"
+ },
+ {
+  "en": "Chimpanzini Bananini",
+  "kr": "[8]",
+  "rarity": "전설 / Legendary",
+  "income": "$300",
+  "price": "$50K"
+ },
+ {
+  "en": "Ballerina Cappuccina",
+  "kr": "발레리나 카푸치나",
+  "rarity": "전설 / Legendary",
+  "income": "$500",
+  "price": "$100K"
+ },
+ {
+  "en": "Chef Crabracadabra",
+  "kr": "셰프 크라브라카다브라",
+  "rarity": "전설 / Legendary",
+  "income": "$600",
+  "price": "$150K"
+ },
+ {
+  "en": "Lionel Cactuseli",
+  "kr": "라이오넬 칵투셀리",
+  "rarity": "전설 / Legendary",
+  "income": "$650",
+  "price": "$175K"
+ },
+ {
+  "en": "Glorbo Fruttodrillo",
+  "kr": "글로르보 프루토드릴로",
+  "rarity": "전설 / Legendary",
+  "income": "$750",
+  "price": "$200K"
+ },
+ {
+  "en": "Quivioli Ameleonni",
+  "kr": "퀴비올리 아멜레오니",
+  "rarity": "전설 / Legendary",
+  "income": "$900",
+  "price": "$225K"
+ },
+ {
+  "en": "Bluberrinni Octopusini",
+  "kr": "블루베리니 옥토푸시니",
+  "rarity": "전설 / Legendary",
+  "income": "$1K",
+  "price": "$250K"
+ },
+ {
+  "en": "Pipi Potato",
+  "kr": "피피 포테토",
+  "rarity": "전설 / Legendary",
+  "income": "$1.1K",
+  "price": "$265K"
+ },
+ {
+  "en": "Strawberrelli Flamingelli",
+  "kr": "스트로베렐리 플라밍겔리",
+  "rarity": "전설 / Legendary",
+  "income": "$1.15K",
+  "price": "$275K"
+ },
+ {
+  "en": "Pandaccini Bananini",
+  "kr": "[9]",
+  "rarity": "전설 / Legendary",
+  "income": "$1.25K",
+  "price": "$300K"
+ },
+ {
+  "en": "Sigma Boy",
+  "kr": "[10]",
+  "rarity": "전설 / Legendary",
+  "income": "$1.35K",
+  "price": "$325K"
+ },
+ {
+  "en": "Frigo Camelo",
+  "kr": "[11]",
+  "rarity": "신화 / Mythic",
+  "income": "$2K",
+  "price": "$350K"
+ },
+ {
+  "en": "Orangutini Ananassini",
+  "kr": "[12]",
+  "rarity": "신화 / Mythic",
+  "income": "$2.1K",
+  "price": "$400K"
+ },
+ {
+  "en": "Rhino Toasterino",
+  "kr": "[13]",
+  "rarity": "신화 / Mythic",
+  "income": "$2.15K",
+  "price": "$450K"
+ },
+ {
+  "en": "Bombardiro Crocodilo",
+  "kr": "봄바르디로 크로코딜로",
+  "rarity": "신화 / Mythic",
+  "income": "$2.5K",
+  "price": "$500K"
+ },
+ {
+  "en": "Bombombini Gusini",
+  "kr": "[14]",
+  "rarity": "신화 / Mythic",
+  "income": "$5K",
+  "price": "$1M"
+ },
+ {
+  "en": "Cavallo Virtuoso",
+  "kr": "카발로 비르투오소",
+  "rarity": "신화 / Mythic",
+  "income": "$7.5K",
+  "price": "$2.5M"
+ },
+ {
+  "en": "Gorillo Watermelondrillo",
+  "kr": "[15]",
+  "rarity": "신화 / Mythic",
+  "income": "$8K",
+  "price": "$3M"
+ },
+ {
+  "en": "Lerulerulerule",
+  "kr": "레롤레롤레롤레",
+  "rarity": "신화 / Mythic",
+  "income": "$8.75K",
+  "price": "$3.5M"
+ },
+ {
+  "en": "Te Te Te Sahur",
+  "kr": "테 테 테 사후르",
+  "rarity": "신화 / Mythic",
+  "income": "$9.5K",
+  "price": "$4M"
+ },
+ {
+  "en": "Tracotucotulu Delapeladustuz",
+  "kr": "[16]",
+  "rarity": "신화 / Mythic",
+  "income": "$12K",
+  "price": "$4.25M"
+ },
+ {
+  "en": null,
+  "kr": null,
+  "rarity": "신화 / Mythic",
+  "income": "$13K",
+  "price": "$4.4M"
+ },
+ {
+  "en": null,
+  "kr": null,
+  "rarity": "신화 / Mythic",
+  "income": "$16K",
+  "price": "$4.9M"
+ },
+ {
+  "en": "Cocofanto Elefanto",
+  "kr": "[17]",
+  "rarity": null,
+  "income": "$19K",
+  "price": "$6.5M"
+ },
+ {
+  "en": "Girafa Celestre",
+  "kr": "지라파 첼레스트레",
+  "rarity": null,
+  "income": "$20K",
+  "price": "$7.5M"
+ },
+ {
+  "en": "Tralalero Tralala",
+  "kr": "트랄랄레로 트랄랄라",
+  "rarity": null,
+  "income": "$50K",
+  "price": "$10M"
+ },
+ {
+  "en": "Odin Din Din Dun",
+  "kr": "오딘 딘 딘 둔",
+  "rarity": null,
+  "income": "$75K",
+  "price": "$15M"
+ },
+ {
+  "en": "Trenostruzzo Turbo 3000",
+  "kr": "트레노스트루죠 투르보 3000",
+  "rarity": null,
+  "income": "$150K",
+  "price": "$25M"
+ },
+ {
+  "en": "Trippi Troppi Troppa Trippa",
+  "kr": "[18]",
+  "rarity": null,
+  "income": "$175K",
+  "price": "$30M"
+ },
+ {
+  "en": "Ballerino Lololo",
+  "kr": "[19]",
+  "rarity": null,
+  "income": "$200K",
+  "price": "$35M"
+ },
+ {
+  "en": "Pakrahmatmamat",
+  "kr": "파크라흐맛마맛",
+  "rarity": null,
+  "income": "$210K",
+  "price": "$37.5M"
+ },
+ {
+  "en": "Piccione Macchina",
+  "kr": "피치오네 마키나",
+  "rarity": null,
+  "income": "$225K",
+  "price": "$40M"
+ },
+ {
+  "en": "Cacasito Satalito",
+  "kr": "카카시토 사탈리토",
+  "rarity": null,
+  "income": "$240K",
+  "price": "$45M"
+ },
+ {
+  "en": "La Vacca Saturno Saturnita",
+  "kr": "[20]",
+  "rarity": null,
+  "income": "$325K",
+  "price": "$80M"
+ },
+ {
+  "en": "Los Tralaleritos",
+  "kr": "[22]",
+  "rarity": null,
+  "income": "$500K",
+  "price": "$100M"
+ },
+ {
+  "en": "Job Job Job Sahur",
+  "kr": "[23]",
+  "rarity": null,
+  "income": "$700K",
+  "price": "$175M"
+ },
+ {
+  "en": "Graipuss Medussi",
+  "kr": "그라이푸시 메두시",
+  "rarity": null,
+  "income": "$1M",
+  "price": "$250M"
+ },
+ {
+  "en": "To To To Sahur",
+  "kr": "토 토 토 사후르",
+  "rarity": null,
+  "income": "$2.25M",
+  "price": "$575M"
+ },
+ {
+  "en": "Chicleteira Bicicleteira",
+  "kr": "[24]",
+  "rarity": null,
+  "income": "$3.5M",
+  "price": "$750M"
+ },
+ {
+  "en": "La Grande Combinasion",
+  "kr": "[25]",
+  "rarity": null,
+  "income": "$10M",
+  "price": "$1B"
+ },
+ {
+  "en": "Nuclearo Dinossauro",
+  "kr": "누클레아로 디노사우로",
+  "rarity": null,
+  "income": "$15M",
+  "price": "$2.5B"
+ },
+ {
+  "en": "Tang Tang Kelentang",
+  "kr": "탕 탕 켈렌탕",
+  "rarity": null,
+  "income": "$33.5M",
+  "price": "$4.5B"
+ },
+ {
+  "en": "Ketupat Kepat",
+  "kr": "케투팟 케팟",
+  "rarity": null,
+  "income": "$35M",
+  "price": "$5B"
+ },
+ {
+  "en": "Tictac Sahur",
+  "kr": "틱탁 사후르",
+  "rarity": null,
+  "income": "$37.5M",
+  "price": "$6B"
+ },
+ {
+  "en": null,
+  "kr": "[26]",
+  "rarity": null,
+  "income": "$45M",
+  "price": "$8B"
+ },
+ {
+  "en": "Garama and Madundung",
+  "kr": "가라마 앤 마둔둥",
+  "rarity": null,
+  "income": "$50M",
+  "price": "$10B"
+ },
+ {
+  "en": null,
+  "kr": "[28]",
+  "rarity": null,
+  "income": "$65M",
+  "price": "$15.5B"
+ },
+ {
+  "en": "Dragon Cannelloni",
+  "kr": "케로베로스",
+  "rarity": null,
+  "income": "$250M",
+  "price": "$250B"
+ },
+ {
+  "en": "Skibidi Toilet",
+  "kr": "[29]",
+  "rarity": null,
+  "income": "$450M",
+  "price": "$450B"
+ },
+ {
+  "en": "Meowl",
+  "kr": "미아울",
+  "rarity": null,
+  "income": "$650M",
+  "price": "$650B"
+ },
+ {
+  "en": "Sammy",
+  "kr": "[31]",
+  "rarity": null,
+  "income": "$750M",
+  "price": "$750B"
+ }
+]
