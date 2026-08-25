@@ -3,12 +3,13 @@ import { Game } from '../core/GameState';
 import { brainrotById } from '../data/brainrots';
 import { MUTATION_BY_ID } from '../data/mutations';
 import { displayName } from '../core/names';
+import { hashStr } from '../core/rng';
 import { formatMoney, instanceIncome } from '../core/Economy';
 import { tryPickUp, arriveOwnBase, droppedPositions } from '../core/Carry';
 import { lockBase, canEnterBase } from '../core/BaseLock';
 import { useTool, purchaseTool } from '../core/ToolEffects';
 import { BotBrain, type BotIntent } from '../core/Bots';
-import { baseCenter, inBaseZone, inCarpetZone, dist2d } from '../core/Layout';
+import { baseCenter, inBaseZone, inCarpetZone, dist2d, CARPET_WALK_MS } from '../core/Layout';
 import { GameScene } from './Scene';
 import type { MapRefs } from './MapBuilder';
 import { resolveCollisions } from './MapBuilder';
@@ -24,9 +25,12 @@ interface BrainrotView {
   visual: ReturnType<typeof buildBrainrotMesh>;
   label: THREE.Sprite;
   coin: THREE.Mesh;
-  /** 이동 보간 (걷기 애니메이션) */
+  /** 기지까지 걷기 보간 */
   walk: { from: THREE.Vector3; to: THREE.Vector3; until: number } | null;
-  spotIdx: number;
+  /** 카펫 컨베이어 걷기 시작 시각 (carpet 상태) */
+  carpetStartAt: number | null;
+  /** 카펫 x 지터 (동시 스폰 겹침 방지) */
+  carpetJitter: number;
 }
 
 interface BotView {
@@ -42,7 +46,6 @@ export class GameViews {
   private player: PlayerController;
   private brainrotViews = new Map<string, BrainrotView>();
   private botViews: BotView[] = [];
-  private carpetOccupancy = new Map<number, string>(); // spotIdx → uid
   private labelCache = new Map<string, THREE.Sprite>();
   private coinGeo = new THREE.TetrahedronGeometry(0.22);
   private coinMat = new THREE.MeshLambertMaterial({ color: 0xffd700 });
@@ -64,8 +67,10 @@ export class GameViews {
     this.player = new PlayerController(
       gs.camera, gs.renderer.domElement, map.colliders, map.groundHeight, 0x74b9ff,
     );
-    const door0 = map.doorCenter(0).clone().multiplyScalar(1.15);
-    this.player.teleportTo(door0.x, door0.z);
+    const door0 = map.doorCenter(0);
+    // 서쪽(기지0) 문에서 거리 쪽으로 2.5m
+    this.player.teleportTo(door0.x + 2.5, door0.z);
+    this.player.camYaw = -Math.PI / 2; // 거리(동쪽)를 바라봄
     gs.scene.add(this.player.mesh);
 
     // 봇 아바타
@@ -91,6 +96,8 @@ export class GameViews {
     ev.on('ownership-transferred', ({ uid }) => this.onTransferred(uid));
     ev.on('dropped', ({ uid }) => this.onDropped(uid));
     ev.on('despawned', ({ uid }) => this.removeView(uid));
+    ev.on('locked', ({ baseId }) => this.map.setBaseLocked(baseId, true));
+    ev.on('unlocked', ({ baseId }) => this.map.setBaseLocked(baseId, false));
     ev.on('arrived', ({ uid }) => this.snapToSlot(uid));
     ev.on('knockback', ({ targetId, dir, force }) => {
       if (targetId === 'p0') this.player.addKnockback(dir, force);
@@ -241,12 +248,12 @@ export class GameViews {
     if (!inst) return;
     const def = brainrotById.get(inst.defId)!;
     const visual = buildBrainrotMesh(def.id, def.rarity, inst.mutation);
-    // 빈 카펫 자리 배정
-    let spot = 0;
-    while (this.carpetOccupancy.has(spot) && spot < 5) spot++;
-    this.carpetOccupancy.set(spot, uid);
-    const sp = this.map.carpetSpots[Math.min(spot, 5)];
-    visual.group.position.copy(sp);
+    // 카펫 북쪽 출입구에서 등장 — 좌우 지터로 겹침 방지
+    const jitter = ((hashStr(uid) % 100) / 100 - 0.5) * 3.6;
+    const start = this.map.carpetStart.clone();
+    start.x += jitter;
+    visual.group.position.copy(start);
+    visual.group.rotation.y = Math.PI; // 남쪽(+z)으로 걸으므로 반대 방향 정면
     this.gs.scene.add(visual.group);
 
     const view: BrainrotView = {
@@ -254,9 +261,10 @@ export class GameViews {
       label: this.makeLabel(inst.defId, def.rarity, inst.mutation),
       coin: new THREE.Mesh(this.coinGeo, this.coinMat),
       walk: null,
-      spotIdx: spot,
+      carpetStartAt: this.game.state.timeMs,
+      carpetJitter: jitter,
     };
-    view.label.position.set(sp.x, 2.6 * visual.group.scale.x + 0.8, sp.z);
+    view.label.position.set(start.x, 2.6 * visual.group.scale.x + 0.8, start.z);
     view.coin.visible = false;
     this.gs.scene.add(view.label);
     this.gs.scene.add(view.coin);
@@ -267,7 +275,7 @@ export class GameViews {
     const inst = this.game.instance(uid);
     const view = this.brainrotViews.get(uid);
     if (!inst || !view) return;
-    this.carpetOccupancy.delete(view.spotIdx);
+    view.carpetStartAt = null;
     // 기지 슬롯까지 걷기
     const to = inst.slot ? this.map.slotPos(inst.slot.baseId, this.floorSlotIndex(inst)) : new THREE.Vector3();
     view.walk = {
@@ -340,9 +348,6 @@ export class GameViews {
     this.gs.scene.remove(view.label);
     this.gs.scene.remove(view.coin);
     this.brainrotViews.delete(uid);
-    for (const [idx, u] of this.carpetOccupancy) {
-      if (u === uid) this.carpetOccupancy.delete(idx);
-    }
     droppedPositions.delete(uid);
   }
 
@@ -630,9 +635,28 @@ export class GameViews {
         animateRainbow(view.visual.rainbowMats, t, view.visual.bobPhase);
       }
 
-      // Idle 바운스 (카펫 위)
-      if (inst.location === 'carpet') {
-        view.visual.group.position.y = 0.25 + Math.sin(t * 2 + view.visual.bobPhase) * 0.12;
+      // 카펫 컨베이어 — 북쪽 출입구에서 남쪽 끝까지 걷기
+      if (inst.location === 'carpet' && view.carpetStartAt !== null) {
+        const prog = Math.min(1, (now - view.carpetStartAt) / CARPET_WALK_MS);
+        const sx = this.map.carpetStart.x + view.carpetJitter;
+        const sz = this.map.carpetStart.z;
+        const ex = this.map.carpetEnd.x + view.carpetJitter;
+        const ez = this.map.carpetEnd.z;
+        view.visual.group.position.set(
+          sx + (ex - sx) * prog,
+          0.15 + Math.abs(Math.sin(prog * Math.PI * 14 + view.visual.bobPhase)) * 0.18,
+          sz + (ez - sz) * prog,
+        );
+        view.label.position.set(
+          view.visual.group.position.x,
+          2.6 * view.visual.group.scale.x + 0.8,
+          view.visual.group.position.z,
+        );
+        if (prog >= 1) {
+          // 남쪽 끝 도달 — 미판매 소멸
+          this.game.removeInstance(view.uid);
+          this.game.events.emit('despawned', { uid: view.uid });
+        }
       }
     }
 

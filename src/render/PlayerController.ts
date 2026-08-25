@@ -116,17 +116,23 @@ export class PlayerController {
 
     const move = new THREE.Vector3();
     if (!stunned) {
-      if (input.forward) move.z -= 1;
-      if (input.back) move.z += 1;
-      if (input.left) move.x -= 1;
-      if (input.right) move.x += 1;
-      if (move.lengthSq() > 0) {
-        move.normalize();
-        // 카메라 yaw 기준 회전
+      // 화면 기준 입력: sz=+1 화면 위(전방), sx=+1 화면 우측
+      let sx = 0;
+      let sz = 0;
+      if (input.forward) sz += 1;
+      if (input.back) sz -= 1;
+      if (input.right) sx += 1;
+      if (input.left) sx -= 1;
+      if (sx !== 0 || sz !== 0) {
+        const len = Math.hypot(sx, sz);
+        sx /= len;
+        sz /= len;
+        // 화면 전방 f=(sin,cos) — 카메라가 pos-f·dist에 있으므로 f가 화면 위 방향
+        // 화면 우측 r=(-cos,sin)
         const cos = Math.cos(this.camYaw);
         const sin = Math.sin(this.camYaw);
-        const wx = move.x * cos - move.z * sin;
-        const wz = move.x * sin + move.z * cos;
+        const wx = -sx * cos + sz * sin;
+        const wz = sx * sin + sz * cos;
         move.set(wx, 0, wz);
         this.yaw = Math.atan2(wx, wz);
         this.walkPhase += dt * 10 * speed / WALK_SPEED;
@@ -186,8 +192,8 @@ export class PlayerController {
     this.camera.lookAt(this.pos.x, this.pos.y + 1.6, this.pos.z);
   }
 
-  /** 조준 방향 (xz 평면, 카메라 전방) */
+  /** 조준 방향 (xz 평면, 화면 전방 = 카메라가 바라보는 방향) */
   aimDir(): { x: number; z: number } {
-    return { x: -Math.sin(this.camYaw), z: -Math.cos(this.camYaw) };
+    return { x: Math.sin(this.camYaw), z: Math.cos(this.camYaw) };
   }
 }
