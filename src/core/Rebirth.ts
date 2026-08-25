@@ -43,8 +43,6 @@ export function doRebirth(g: Game, playerId: string): { ok: boolean; reason?: st
   const check = canRebirth(g, playerId);
   if (!check.ok) return { ok: false, reason: 'requirements-not-met' };
 
-  const def = REBIRTHS[p.rebirth];
-
   // 재산·브레인롯 초기화 — 기지 슬롯의 것 전부 제거 (운반 중인 것도)
   const toRemove = g.state.brainrots.filter((i) => i.ownerId === playerId);
   for (const inst of toRemove) {

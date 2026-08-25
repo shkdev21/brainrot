@@ -1,7 +1,7 @@
-import type { GameState, PlayerState, BrainrotInstance } from './types';
+import type { GameState, BrainrotInstance } from './types';
 import { brainrotById } from '../data/brainrots';
 import { MUTATION_BY_ID } from '../data/mutations';
-import { makeRng, weightedPick, range, type Rng } from './rng';
+import { range, type Rng } from './rng';
 
 // 경제 계산 — 순수 함수로만 구성 (테스트 용이)
 

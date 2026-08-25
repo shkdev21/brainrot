@@ -35,7 +35,6 @@ export class BotBrain {
   readonly playerId: string;
   private rng: Rng;
   private nextThinkAt = 0;
-  private raidTargetBase: number | null = null;
   private raidAgainAt = 0;
   private cached: BotIntent = { moveTo: null };
 
@@ -46,7 +45,6 @@ export class BotBrain {
 
   /** 통합 계층이 매 순간 리셋 — 테스트용 */
   resetMemory(): void {
-    this.raidTargetBase = null;
     this.raidAgainAt = 0;
     this.nextThinkAt = 0;
   }
@@ -105,10 +103,10 @@ export class BotBrain {
 
     // 3) 성격별 행동
     if (me.persona === 'guardian') {
-      return this.thinkGuardian(g, me, pos, home);
+      return this.thinkGuardian(g, me, home);
     }
     if (me.persona === 'raider') {
-      return this.thinkRaider(g, me, pos, home);
+      return this.thinkRaider(g, me, pos);
     }
     return this.thinkFarmer(g, me, pos);
   }
@@ -123,15 +121,15 @@ export class BotBrain {
         intent.moveTo = { x: 0, z: 0 };
       }
     }
-    const tool = this.toolToBuy(g, me);
+    const tool = this.toolToBuy(me);
     if (tool) intent.buyToolId = tool;
     return intent;
   }
 
   // ── 수비형: 기지 순찰 + 가끔 구매 ────────────────────────
-  private thinkGuardian(g: Game, me: PlayerState, pos: P2, home: P2): BotIntent {
+  private thinkGuardian(g: Game, me: PlayerState, home: P2): BotIntent {
     const intent: BotIntent = { moveTo: null };
-    const tool = this.toolToBuy(g, me);
+    const tool = this.toolToBuy(me);
     if (tool) intent.buyToolId = tool;
 
     // 여유 자금이면 근처 카펫 스폰 구매 (집 근처에 있을 때만)
@@ -147,9 +145,9 @@ export class BotBrain {
   }
 
   // ── 약탈형: 부유 기지 습격 ───────────────────────────────
-  private thinkRaider(g: Game, me: PlayerState, pos: P2, home: P2): BotIntent {
+  private thinkRaider(g: Game, me: PlayerState, pos: P2): BotIntent {
     const intent: BotIntent = { moveTo: null };
-    const tool = this.toolToBuy(g, me);
+    const tool = this.toolToBuy(me);
     if (tool) intent.buyToolId = tool;
 
     // 습격 쿨타임 전이면 경제
@@ -193,7 +191,6 @@ export class BotBrain {
       return this.thinkFarmer(g, me, pos);
     }
 
-    this.raidTargetBase = best.baseId;
     intent.moveTo = baseCenter(best.baseId);
     return intent;
   }
@@ -201,7 +198,6 @@ export class BotBrain {
   /** 통지: 습격 실패/성공 종료 (통합 계층이 호출) */
   notifyRaidEnded(g: Game): void {
     this.raidAgainAt = g.state.timeMs + raidCooldownMs(0.5);
-    this.raidTargetBase = null;
   }
 
   /** 살 수 있는 카펫 스폰 중 수입 대비 최선 */
@@ -226,7 +222,7 @@ export class BotBrain {
   }
 
   /** 성격 우선순위에 따라 살 도구 */
-  private toolToBuy(g: Game, me: PlayerState): string | null {
+  private toolToBuy(me: PlayerState): string | null {
     const priority = TOOL_PRIORITY[me.persona ?? 'farmer'];
     for (const toolId of priority) {
       const def = TOOL_BY_ID.get(toolId)!;

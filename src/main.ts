@@ -1,36 +1,20 @@
-import * as THREE from 'three';
+import { GameScene } from './render/Scene';
+import { buildMap } from './render/MapBuilder';
+import { baseCenter } from './core/Layout';
+
+// 임시 부트스트랩 — Task 8 검증용 (Task 10에서 게임 통합으로 교체)
 
 const app = document.getElementById('app')!;
+const gs = new GameScene(app);
+const map = buildMap(gs.scene);
 
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-app.appendChild(renderer.domElement);
-
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x87ceeb);
-
-const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 500);
-camera.position.set(0, 30, 60);
-camera.lookAt(0, 0, 0);
-
-scene.add(new THREE.HemisphereLight(0xbfe3ff, 0x556644, 0.9));
-const sun = new THREE.DirectionalLight(0xfff2cc, 1.2);
-sun.position.set(40, 60, 20);
-scene.add(sun);
-
-const ground = new THREE.Mesh(
-  new THREE.CircleGeometry(70, 48).rotateX(-Math.PI / 2),
-  new THREE.MeshLambertMaterial({ color: 0x77bb55 }),
-);
-scene.add(ground);
-
-window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
+// 확인용: 카메가 궤도 회전
+let angle = 0;
+gs.onFrame((dt) => {
+  angle += dt * 0.1;
+  gs.camera.position.set(Math.sin(angle) * 80, 45, Math.cos(angle) * 80);
+  gs.camera.lookAt(0, 0, 0);
 });
 
-renderer.setAnimationLoop(() => {
-  renderer.render(scene, camera);
-});
+// 콘솔 검증용 노출
+Object.assign(window, { __map: map, baseCenter });
