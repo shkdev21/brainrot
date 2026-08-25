@@ -82,17 +82,20 @@ export interface PlayerState {
   botBidCeiling: number;
 }
 
-/** 카펫에 스폰되었거나 기지에 배치된 브레인롯 개체 */
+/** 카펫 스폰 | 기지 배치 | 운반 중 | 바닥에 버려짐(무주공해) */
+export type BrainrotLocation = 'carpet' | 'base' | 'carried' | 'dropped';
+
 export interface BrainrotInstance {
   uid: string;
   defId: string;
   mutation: string | null;
   ownerId: string | null;
-  /** 카펫 스폰 | 기지 배치 | 바닥에 버려짐(무주공해) */
-  location: 'carpet' | 'base' | 'dropped';
+  location: BrainrotLocation;
   slot: { baseId: number; floor: 1 | 2 | 3; index: number } | null;
-  /** 구매 후 기지 걸어가는 중 */
+  /** 구매 후 기지 걸어가는 중 (base 상태에서 earning=false) */
   walkingUntil: number;
+  /** 카펫 미판매 만료 시각 (carpet 상태만) */
+  expiresAt: number;
   /** 수입 개시 여부 (기지 도착 후) */
   earning: boolean;
 }
