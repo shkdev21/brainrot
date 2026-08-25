@@ -2,11 +2,11 @@ import * as THREE from 'three';
 import {
   FIELD_X, FIELD_Z_MIN, FIELD_Z_MAX, STREET_HALF_W, CARPET_HALF_W,
   CARPET_FROM_Z, CARPET_TO_Z, PLOT_INNER_X, PLOT_OUTER_X, PLOT_HALF_Z,
-  HOUSE_X, HOUSE_HALF_X, HOUSE_HALF_Z, FLOOR_H, BASE_COUNT,
-  baseSide, baseCenter, baseDoor,
+  BASE_COUNT, baseSide, baseCenter,
 } from '../core/Layout';
 
-// 맵 빌더 — 원작 스타일: 중앙 레드카펫 거리 + 양옆 컬러 풀하우스 플롯.
+// 맵 빌더 — 원작 스타일: 중앙 레드카펫 거리 + 양옆 "계단식 전시 플랫폼" 기지.
+// 기지 = 콘크리트 티어(1~3층) + 유리 전면(잠금 표시) + 후벽 이름 간판.
 
 export interface Seg {
   x1: number; z1: number; x2: number; z2: number;
@@ -15,7 +15,6 @@ export interface Seg {
 export interface MapRefs {
   colliders: Seg[];
   groundHeight: (x: number, z: number) => number;
-  /** 카펫 시작/끝 (브레인롯이 걸어감) */
   carpetStart: THREE.Vector3;
   carpetEnd: THREE.Vector3;
   slotPos: (baseId: number, slotIndex: number) => THREE.Vector3;
@@ -25,22 +24,30 @@ export interface MapRefs {
   setBaseLocked: (baseId: number, locked: boolean) => void;
 }
 
-const BASE_COLORS = [
+const BASE_TRIM = [
   0xff7b54, 0x4ecdc4, 0xffd93d, 0x6c5ce7,
   0xff9ff3, 0x2e86de, 0xf9ca24, 0x26de81,
 ];
 const SLOT_PER_FLOOR = 10;
+const CONCRETE = 0xb8bcc4;
+const CONCRETE_DARK = 0x9aa0aa;
+const GLASS_OPEN = 0x9fd8ff;
+const GLASS_LOCKED = 0xff5252;
+
+/** 티어 경계(|x| 기준): 13~24 1층 / 24~30 2층 / 30~35 3층 */
+const TIER1_X = 24;
+const TIER2_X = 30;
+const TIER_H = 2.6;
 
 function lambert(color: number): THREE.MeshLambertMaterial {
   return new THREE.MeshLambertMaterial({ color });
 }
 
-export function buildMap(scene: THREE.Scene): MapRefs {
+export function buildMap(scene: THREE.Scene, ownerNames?: string[]): MapRefs {
   const colliders: Seg[] = [];
   const unlocked = new Map<number, 1 | 2 | 3>();
-  const doorMeshes: THREE.Mesh[] = [];
-  const upperGroups = new Map<number, THREE.Group>();
-  const terraceGroups = new Map<number, THREE.Group[]>();
+  const glassMats = new Map<number, THREE.MeshLambertMaterial[]>();
+  const tierGroups = new Map<number, { t2: THREE.Group; t3: THREE.Group }>();
 
   // ── 지면: 밝은 라임 잔디 ─────────────────────────────────
   const grass = new THREE.Mesh(
@@ -51,7 +58,7 @@ export function buildMap(scene: THREE.Scene): MapRefs {
   grass.receiveShadow = true;
   scene.add(grass);
 
-  // ── 거리: 아스팔트 + 중앙선 + 보도 ────────────────────────
+  // ── 거리: 아스팔트 + 보도 ─────────────────────────────────
   const street = new THREE.Mesh(
     new THREE.BoxGeometry(STREET_HALF_W * 2 + 4, 0.3, FIELD_Z_MAX - FIELD_Z_MIN - 4),
     lambert(0x8a8f98),
@@ -59,12 +66,6 @@ export function buildMap(scene: THREE.Scene): MapRefs {
   street.position.set(0, 0.05, (FIELD_Z_MAX + FIELD_Z_MIN) / 2);
   street.receiveShadow = true;
   scene.add(street);
-  for (const s of [-1, 1]) {
-    const dash = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.05, 2), lambert(0xf5f6fa));
-    dash.position.set(0, 0.22, 0);
-    scene.add(dash);
-    void s;
-  }
   const walkMat = lambert(0xd5d8dd);
   for (const s of [-1, 1]) {
     const walk = new THREE.Mesh(
@@ -76,7 +77,7 @@ export function buildMap(scene: THREE.Scene): MapRefs {
     scene.add(walk);
   }
 
-  // ── 레드카펫 (중앙 관통, 황금 테두리+스탠션) ───────────────
+  // ── 레드카펫 (황금 테두리+스탠션) ─────────────────────────
   const carpet = new THREE.Mesh(
     new THREE.BoxGeometry(CARPET_HALF_W * 2, 0.36, CARPET_TO_Z - CARPET_FROM_Z + 6),
     lambert(0xe03131),
@@ -105,7 +106,7 @@ export function buildMap(scene: THREE.Scene): MapRefs {
     }
   }
 
-  // ── 북쪽 스폰 구조물: 갈색 벽 + 어두운 출입구 + 표지 ───────
+  // ── 북쪽 스폰 구조물 ──────────────────────────────────────
   const spawnWall = new THREE.Mesh(new THREE.BoxGeometry(16, 7.5, 2.4), lambert(0x8b5a2b));
   spawnWall.position.set(0, 3.75, CARPET_FROM_Z - 2.6);
   spawnWall.castShadow = true;
@@ -132,148 +133,180 @@ export function buildMap(scene: THREE.Scene): MapRefs {
   signFace.position.set(0, 8.6, CARPET_FROM_Z - 2.25);
   scene.add(signFace);
 
-  // ── 8개 하우스 플롯 ──────────────────────────────────────
+  // ── 8개 계단식 전시 기지 ──────────────────────────────────
   for (let i = 0; i < BASE_COUNT; i++) {
     const side = baseSide(i);
     const c = baseCenter(i);
-    const plotGroup = new THREE.Group();
-    plotGroup.name = 'plot';
-    plotGroup.position.set(c.x, 0, c.z);
-    scene.add(plotGroup);
+    const root = new THREE.Group();
+    root.position.set(0, 0, 0); // 절대좌표로 배치
+    scene.add(root);
+    const S = (x: number) => side * x; // side 부호 헬퍼
 
-    // 플롯 잔디(경계석 느낌의 밝은 판)
-    const plot = new THREE.Mesh(
-      new THREE.BoxGeometry(PLOT_OUTER_X - PLOT_INNER_X, 0.22, PLOT_HALF_Z * 2),
-      lambert(0x93d96a),
+    // ── 1층: 지면 레벨 콘크리트 판 ────────────────────────
+    const slab1 = new THREE.Mesh(
+      new THREE.BoxGeometry(TIER1_X - PLOT_INNER_X + 1, 0.5, PLOT_HALF_Z * 2),
+      lambert(CONCRETE),
     );
-    // 로컬 좌표: 플롯 중심은 |x| (13+35)/2 = 24 → side*24 - c.x
-    plot.position.set(side * 24 - c.x, 0.11, 0);
-    plot.receiveShadow = true;
-    plotGroup.add(plot);
+    slab1.position.set(S((PLOT_INNER_X + TIER1_X) / 2 - 0.5), 0.25, c.z);
+    slab1.receiveShadow = true;
+    root.add(slab1);
 
-    // ── 하우스 ────────────────────────────────────────────
-    const house = new THREE.Group();
-    house.name = 'house';
-    house.position.set(side * HOUSE_X - c.x, 0, 0);
-    plotGroup.add(house);
-
-    const color = BASE_COLORS[i];
-    const body = new THREE.Mesh(
-      new THREE.BoxGeometry(HOUSE_HALF_X * 2, 3.2, HOUSE_HALF_Z * 2),
-      lambert(color),
+    // ── 2층 티어 (해금 시) ────────────────────────────────
+    const t2 = new THREE.Group();
+    t2.visible = false;
+    const slab2 = new THREE.Mesh(
+      new THREE.BoxGeometry(TIER2_X - TIER1_X, TIER_H + 0.5, PLOT_HALF_Z * 2),
+      lambert(CONCRETE),
     );
-    body.position.y = 1.6;
-    body.castShadow = true;
-    body.receiveShadow = true;
-    house.add(body);
+    slab2.position.set(S((TIER1_X + TIER2_X) / 2), (TIER_H + 0.5) / 2, c.z);
+    slab2.castShadow = true;
+    slab2.receiveShadow = true;
+    t2.add(slab2);
+    root.add(t2);
 
-    const roof = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.02, HOUSE_HALF_X * 1.6, 2.6, 4),
-      lambert(0xb0413e),
+    // ── 3층 티어 (해금 시) ────────────────────────────────
+    const t3 = new THREE.Group();
+    t3.visible = false;
+    const slab3 = new THREE.Mesh(
+      new THREE.BoxGeometry(PLOT_OUTER_X - TIER2_X, TIER_H * 2 + 0.5, PLOT_HALF_Z * 2),
+      lambert(CONCRETE),
     );
-    roof.rotation.y = Math.PI / 4;
-    roof.position.y = 4.5;
-    roof.scale.set(1, 1, HOUSE_HALF_Z / HOUSE_HALF_X);
-    roof.castShadow = true;
-    house.add(roof);
+    slab3.position.set(S((TIER2_X + PLOT_OUTER_X) / 2), (TIER_H * 2 + 0.5) / 2, c.z);
+    slab3.castShadow = true;
+    slab3.receiveShadow = true;
+    t3.add(slab3);
+    root.add(t3);
+    tierGroups.set(i, { t2, t3 });
 
-    // 상층(2층 비주얼 — 3층은 별도 탑)
-    const upper = new THREE.Group();
-    upper.name = 'upper';
-    upper.visible = false;
-    const upperBody = new THREE.Mesh(
-      new THREE.BoxGeometry(HOUSE_HALF_X * 2 - 1.2, 2.8, HOUSE_HALF_Z * 2 - 1.2),
-      lambert(color),
+    // ── 후벽 타워: 이름 간판 ─────────────────────────────
+    const trimColor = BASE_TRIM[i];
+    const backWall = new THREE.Mesh(
+      new THREE.BoxGeometry(1.2, 9.2, PLOT_HALF_Z * 2),
+      lambert(CONCRETE_DARK),
     );
-    upperBody.position.y = 3.2 + 1.4;
-    upperBody.castShadow = true;
-    upper.add(upperBody);
-    const upperRoof = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.02, HOUSE_HALF_X * 1.3, 2, 4),
-      lambert(0xb0413e),
-    );
-    upperRoof.rotation.y = Math.PI / 4;
-    upperRoof.position.y = 3.2 + 2.8 + 1;
-    upperRoof.scale.set(1, 1, (HOUSE_HALF_Z - 0.6) / HOUSE_HALF_X);
-    upper.add(upperRoof);
-    house.add(upper);
-    upperGroups.set(i, upper);
-
-    // 문(거리 방향) — 잠금 색상 표시
-    const door = new THREE.Mesh(new THREE.BoxGeometry(0.4, 2.6, 1.7), lambert(0x2ecc71));
-    door.position.set(-side * (HOUSE_HALF_X + 0.05), 1.3, 0);
-    house.add(door);
-    doorMeshes[i] = door;
-    const knob = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 6), lambert(0xf1c40f));
-    knob.position.set(-side * (HOUSE_HALF_X + 0.3), 1.3, 0.5);
-    house.add(knob);
-
-    // 창문
-    const winMat = lambert(0xaed6f1);
-    for (const wz of [-3.2, 3.2]) {
-      const win = new THREE.Mesh(new THREE.BoxGeometry(0.3, 1.4, 2), winMat);
-      win.position.set(-side * (HOUSE_HALF_X + 0.02), 2, wz);
-      house.add(win);
-    }
-
-    // 집 충돌 AABB
-    const hx = side * HOUSE_X;
+    backWall.position.set(S(PLOT_OUTER_X - 0.6), 4.6, c.z);
+    backWall.castShadow = true;
+    root.add(backWall);
+    // 후벽 충돌
     colliders.push(
-      { x1: hx - HOUSE_HALF_X, z1: c.z - HOUSE_HALF_Z, x2: hx + HOUSE_HALF_X, z2: c.z - HOUSE_HALF_Z },
-      { x1: hx - HOUSE_HALF_X, z1: c.z + HOUSE_HALF_Z, x2: hx + HOUSE_HALF_X, z2: c.z + HOUSE_HALF_Z },
-      { x1: hx - HOUSE_HALF_X, z1: c.z - HOUSE_HALF_Z, x2: hx - HOUSE_HALF_X, z2: c.z + HOUSE_HALF_Z },
-      { x1: hx + HOUSE_HALF_X, z1: c.z - HOUSE_HALF_Z, x2: hx + HOUSE_HALF_X, z2: c.z + HOUSE_HALF_Z },
+      { x1: S(PLOT_OUTER_X - 1.2), z1: c.z - PLOT_HALF_Z, x2: S(PLOT_OUTER_X - 1.2), z2: c.z + PLOT_HALF_Z },
     );
 
-    // ── 테라스(2/3층 슬롯 단) ────────────────────────────────
-    const terraces: THREE.Group[] = [];
-    for (const f of [2, 3] as const) {
-      const tg = new THREE.Group();
-      tg.name = 'terrace';
-      tg.visible = false;
-      const depth = 5.4;
-      const tx = side * (16 + (f - 1) * 5.4 + depth / 2);
-      const plat = new THREE.Mesh(
-        new THREE.BoxGeometry(depth, FLOOR_H, PLOT_HALF_Z * 2 - 2),
-        lambert(0xc9a06a),
-      );
-      plat.position.set(tx - c.x, FLOOR_H * (f - 1) + FLOOR_H / 2, 0);
-      plat.castShadow = true;
-      plat.receiveShadow = true;
-      tg.add(plat);
-      const steps = 4;
-      for (let s = 0; s < steps; s++) {
-        const step = new THREE.Mesh(
-          new THREE.BoxGeometry(1.05, (FLOOR_H * (f - 1)) / steps, 2.4),
-          lambert(0xb8925c),
-        );
-        step.position.set(
-          tx - side * (depth / 2 + (steps - s) * 0.95) - c.x,
-          ((FLOOR_H * (f - 1)) / steps) * (s + 0.5),
-          PLOT_HALF_Z - 2.6,
-        );
-        tg.add(step);
-      }
-      plotGroup.add(tg);
-      terraces.push(tg);
-    }
-    terraceGroups.set(i, terraces);
-    unlocked.set(i, 1);
+    // 이름 간판 (캔버스)
+    const name = ownerNames?.[i] ?? `기지 ${i + 1}`;
+    const nc = document.createElement('canvas');
+    nc.width = 256; nc.height = 96;
+    const nctx = nc.getContext('2d')!;
+    nctx.fillStyle = '#222831'; nctx.fillRect(0, 0, 256, 96);
+    nctx.fillStyle = '#ffd43b'; nctx.fillRect(0, 0, 256, 14);
+    nctx.font = 'bold 44px sans-serif'; nctx.fillStyle = '#fff';
+    nctx.textAlign = 'center'; nctx.textBaseline = 'middle';
+    nctx.fillText(name, 128, 58);
+    const nameSign = new THREE.Mesh(
+      new THREE.PlaneGeometry(7.5, 2.8),
+      new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(nc) }),
+    );
+    // 거리 쪽에서 보이도록 방향
+    const signDir = side < 0 ? 1 : -1;
+    nameSign.position.set(S(PLOT_OUTER_X - 1.25), 6.6, c.z);
+    nameSign.rotation.y = signDir > 0 ? Math.PI / 2 : -Math.PI / 2;
+    root.add(nameSign);
+    // 트림 라인 (기지 색)
+    const trimBar = new THREE.Mesh(
+      new THREE.BoxGeometry(1.3, 0.7, PLOT_HALF_Z * 2),
+      lambert(trimColor),
+    );
+    trimBar.position.set(S(PLOT_OUTER_X - 0.6), 9.3, c.z);
+    root.add(trimBar);
 
-    // 잠금 패드
-    const d = baseDoor(i);
+    // ── 유리 전면 패널 (잠금 표시) ────────────────────────
+    const glasses: THREE.MeshLambertMaterial[] = [];
+    const glassFront = (
+      cx: number, cy: number, w: number, h: number,
+    ) => {
+      const mat = new THREE.MeshLambertMaterial({
+        color: GLASS_OPEN, transparent: true, opacity: 0.45,
+      });
+      const panel = new THREE.Mesh(new THREE.BoxGeometry(0.25, h, w), mat);
+      panel.position.set(S(cx), cy, c.z);
+      root.add(panel);
+      glasses.push(mat);
+    };
+    // 1층 전면: 낮은 유리 가드레일 (출입은 열림 상태에서 자유)
+    glassFront(PLOT_INNER_X + 0.3, 0.85, PLOT_HALF_Z * 2 - 1, 1.2);
+    // 2·3층 전면 가드레일
+    const rail2 = new THREE.Mesh(
+      new THREE.BoxGeometry(0.25, 1.1, PLOT_HALF_Z * 2),
+      new THREE.MeshLambertMaterial({ color: GLASS_OPEN, transparent: true, opacity: 0.4 }),
+    );
+    rail2.position.set(S(TIER1_X + 0.15), TIER_H + 0.55, c.z);
+    t2.add(rail2);
+    glasses.push(rail2.material as THREE.MeshLambertMaterial);
+    const rail3 = new THREE.Mesh(
+      new THREE.BoxGeometry(0.25, 1.1, PLOT_HALF_Z * 2),
+      new THREE.MeshLambertMaterial({ color: GLASS_OPEN, transparent: true, opacity: 0.4 }),
+    );
+    rail3.position.set(S(TIER2_X + 0.15), TIER_H * 2 + 0.55, c.z);
+    t3.add(rail3);
+    glasses.push(rail3.material as THREE.MeshLambertMaterial);
+    glassMats.set(i, glasses);
+
+    // ── 측벽 (양옆 저벽, 티어 높이 따라) ─────────────────
+    for (const sz of [-1, 1]) {
+      const side1 = new THREE.Mesh(
+        new THREE.BoxGeometry(TIER1_X - PLOT_INNER_X, 1.0, 0.6),
+        lambert(CONCRETE_DARK),
+      );
+      side1.position.set(S((PLOT_INNER_X + TIER1_X) / 2), 0.5, c.z + sz * PLOT_HALF_Z);
+      root.add(side1);
+      const side2 = new THREE.Mesh(
+        new THREE.BoxGeometry(TIER2_X - TIER1_X, TIER_H + 1.0, 0.6),
+        lambert(CONCRETE_DARK),
+      );
+      side2.position.set(S((TIER1_X + TIER2_X) / 2), (TIER_H + 1) / 2, c.z + sz * PLOT_HALF_Z);
+      t2.add(side2);
+      const side3 = new THREE.Mesh(
+        new THREE.BoxGeometry(PLOT_OUTER_X - TIER2_X, TIER_H * 2 + 1, 0.6),
+        lambert(CONCRETE_DARK),
+      );
+      side3.position.set(S((TIER2_X + PLOT_OUTER_X) / 2), (TIER_H * 2 + 1) / 2, c.z + sz * PLOT_HALF_Z);
+      t3.add(side3);
+    }
+
+    // ── 티어 사이 계단 (z 양쪽 가장자리, 번갈아) ───────────
+    const stairEdgeZ = c.z + (i % 2 === 0 ? 1 : -1) * (PLOT_HALF_Z - 1.2);
+    for (let s = 0; s < 5; s++) {
+      const step = new THREE.Mesh(
+        new THREE.BoxGeometry(0.9, (TIER_H / 5) * (s + 1), 1.8),
+        lambert(CONCRETE_DARK),
+      );
+      step.position.set(S(TIER1_X - 0.45 - s * 0.9), (TIER_H / 5) * (s + 1) / 2, stairEdgeZ);
+      root.add(step);
+    }
+    for (let s = 0; s < 5; s++) {
+      const step = new THREE.Mesh(
+        new THREE.BoxGeometry(0.9, (TIER_H / 5) * (s + 1), 1.8),
+        lambert(CONCRETE_DARK),
+      );
+      step.position.set(S(TIER2_X - 0.45 - s * 0.9), TIER_H + (TIER_H / 5) * (s + 1) / 2, stairEdgeZ);
+      root.add(step);
+    }
+
+    // ── 잠금 패드 (전면 유리 안쪽) ────────────────────────
     const pad = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.75, 0.9, 0.22, 14),
+      new THREE.CylinderGeometry(0.75, 0.9, 0.26, 14),
       lambert(0x7f8c9b),
     );
-    pad.position.set(d.x - side * 1.6 - c.x, 0.24, 0);
-    plotGroup.add(pad);
-    const padIcon = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.7, 0.1), lambert(0x2d3436));
-    padIcon.position.set(d.x - side * 1.6 - c.x, 0.6, 0);
-    plotGroup.add(padIcon);
+    pad.position.set(S(PLOT_INNER_X + 1.8), 0.55, c.z + (i % 2 === 0 ? 1 : -1) * 3);
+    root.add(pad);
+    const padIcon = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.7, 0.12), lambert(0x2d3436));
+    padIcon.position.set(S(PLOT_INNER_X + 1.8), 0.95, c.z + (i % 2 === 0 ? 1 : -1) * 3);
+    root.add(padIcon);
+
+    unlocked.set(i, 1);
   }
 
-  // ── 슬롯 위치: 층×5열×2줄 ─────────────────────────────────
+  // ── 슬롯 위치: 층×2행×5열 ─────────────────────────────────
   const slotCache: THREE.Vector3[][] = [];
   for (let i = 0; i < BASE_COUNT; i++) {
     const side = baseSide(i);
@@ -284,34 +317,43 @@ export function buildMap(scene: THREE.Scene): MapRefs {
       const k = s % SLOT_PER_FLOOR;
       const col = k % 5;
       const rowD = Math.floor(k / 5);
-      const x = side * (15.2 + floor * 5.4 + rowD * 2.5);
-      const z = c.z + (col - 2) * 3.5;
-      slots.push(new THREE.Vector3(x, floor * FLOOR_H + 0.5, z));
+      const x = 16.2 + floor * 5.6 + rowD * 2.8;
+      const z = c.z + (col - 2) * 3.4;
+      const y = floor * TIER_H;
+      slots.push(new THREE.Vector3(side * x, y + 0.5, z));
     }
     slotCache[i] = slots;
   }
 
-  // ── 지면 높이: 테라스 반영 ────────────────────────────────
+  // ── 지면 높이: 계단식 티어 ────────────────────────────────
   const groundHeight = (x: number, z: number): number => {
     for (let i = 0; i < BASE_COUNT; i++) {
       const c = baseCenter(i);
       if (Math.abs(z - c.z) > PLOT_HALF_Z) continue;
       const side = baseSide(i);
       const ax = Math.abs(x);
-      if (ax < 14 || ax > PLOT_OUTER_X) continue;
+      if (ax < PLOT_INNER_X - 1 || ax > PLOT_OUTER_X) continue;
       if (Math.sign(x) !== side) continue;
       const floors = unlocked.get(i) ?? 1;
-      const band1 = 20.6;
-      const band2 = 26;
-      let floor = 1;
-      if (floors >= 2 && ax > band1) floor = 2;
-      if (floors >= 3 && ax > band2) floor = 3;
-      return (floor - 1) * FLOOR_H;
+      // 계단 구간 근사: 티어 경계 ±0.9에서 선형 보간 (컨트롤러가 착지 보정)
+      const lerpBand = (edge: number, lower: number, upper: number) => {
+        if (ax < edge - 0.9) return lower;
+        if (ax > edge + 0.9) return upper;
+        const t = (ax - (edge - 0.9)) / 1.8;
+        return lower + (upper - lower) * t;
+      };
+      if (floors >= 3 && ax > TIER2_X - 0.9) {
+        return lerpBand(TIER2_X, TIER_H, TIER_H * 2);
+      }
+      if (floors >= 2 && ax > TIER1_X - 0.9) {
+        return lerpBand(TIER1_X, 0, TIER_H);
+      }
+      return 0;
     }
     return 0;
   };
 
-  // ── 필드 경계 울타리 + 충돌 ────────────────────────────────
+  // ── 필드 경계 울타리 ──────────────────────────────────────
   const fenceMat = lambert(0xa9b6c2);
   const addFence = (x1: number, z1: number, x2: number, z2: number) => {
     const mesh = new THREE.Mesh(
@@ -328,7 +370,6 @@ export function buildMap(scene: THREE.Scene): MapRefs {
   addFence(-FIELD_X, FIELD_Z_MAX, FIELD_X, FIELD_Z_MAX);
   addFence(-FIELD_X, FIELD_Z_MIN, -FIELD_X, FIELD_Z_MAX);
   addFence(FIELD_X, FIELD_Z_MIN, FIELD_X, FIELD_Z_MAX);
-  // 스폰 벽
   addFence(-8.2, CARPET_FROM_Z - 3.8, 8.2, CARPET_FROM_Z - 3.8);
 
   // ── 가로수/가로등 ────────────────────────────────────────
@@ -368,25 +409,27 @@ export function buildMap(scene: THREE.Scene): MapRefs {
     carpetEnd: new THREE.Vector3(0, 0.2, CARPET_TO_Z - 2),
     slotPos: (baseId, slotIndex) => slotCache[baseId][Math.min(Math.max(slotIndex, 0), 29)],
     lockPadPos: (baseId) => {
-      const d = baseDoor(baseId);
+      const c = baseCenter(baseId);
       const side = baseSide(baseId);
-      return new THREE.Vector3(d.x - side * 1.6, 0.2, d.z);
+      return new THREE.Vector3(side * (PLOT_INNER_X + 1.8), 0.3, c.z + (baseId % 2 === 0 ? 1 : -1) * 3);
     },
     doorCenter: (baseId) => {
-      const d = baseDoor(baseId);
-      return new THREE.Vector3(d.x, 0, d.z);
+      const c = baseCenter(baseId);
+      const side = baseSide(baseId);
+      return new THREE.Vector3(side * (PLOT_INNER_X + 0.6), 0, c.z);
     },
     setFloors: (baseId, floors) => {
       unlocked.set(baseId, floors);
-      upperGroups.get(baseId)!.visible = floors >= 2;
-      const terr = terraceGroups.get(baseId)!;
-      terr[0].visible = floors >= 2;
-      terr[1].visible = floors >= 3;
+      const tg = tierGroups.get(baseId)!;
+      tg.t2.visible = floors >= 2;
+      tg.t3.visible = floors >= 3;
     },
     setBaseLocked: (baseId, locked) => {
-      const door = doorMeshes[baseId];
-      if (door) {
-        (door.material as THREE.MeshLambertMaterial).color.setHex(locked ? 0xe03131 : 0x2ecc71);
+      const mats = glassMats.get(baseId);
+      if (!mats) return;
+      for (const m of mats) {
+        m.color.setHex(locked ? GLASS_LOCKED : GLASS_OPEN);
+        m.opacity = locked ? 0.75 : 0.45;
       }
     },
   };
