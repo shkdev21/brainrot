@@ -105,6 +105,8 @@ export interface BaseState {
   ownerId: string;
   lockedUntil: number;
   lockCooldownUntil: number;
+  /** 해제 이벤트 중복 방지 */
+  notifiedUnlock: boolean;
   unlockedFloors: 1 | 2 | 3;
 }
 
@@ -135,6 +137,8 @@ export interface GameState {
   nextSpawnAt: Record<string, number>;
   nextAuctionAt: number;
   seq: number;
+  /** 플레이어 xz 좌표 — 렌더 통합 계층이 매 프레임 갱신, core는 판정에만 읽기 */
+  positions: Record<string, Vec2>;
 }
 
 export interface Vec2 {

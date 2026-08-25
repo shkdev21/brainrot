@@ -11,6 +11,8 @@ import {
   playerIncomePerSec, ownedCount,
 } from './Economy';
 import { updateCarry, updateDropped } from './Carry';
+import { updateLocks } from './BaseLock';
+import { updateDeployables } from './ToolEffects';
 
 // Game — 월드 시뮬레이션 허브. 20Hz 고정 스텝 tick.
 
@@ -68,6 +70,7 @@ export class Game {
         ownerId: id,
         lockedUntil: 0,
         lockCooldownUntil: 0,
+        notifiedUnlock: true,
         unlockedFloors: 1,
       });
     }
@@ -83,6 +86,7 @@ export class Game {
       nextSpawnAt: {},
       nextAuctionAt: 240000,
       seq: 0,
+      positions: {},
     };
 
     // 첫 스폰 타이머: 커먼은 즉시 하나
@@ -122,6 +126,8 @@ export class Game {
     this.updateExpiry(now);
     updateCarry(this, dtMs);
     updateDropped(this);
+    updateLocks(this);
+    updateDeployables(this);
   }
 
   private updateSpawns(now: number): void {

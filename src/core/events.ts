@@ -14,6 +14,7 @@ export interface GameEventMap {
   'stunned': { targetId: string; until: number; reason: string };
   'knockback': { targetId: string; dir: Vec2; force: number };
   'teleported': { playerId: string; from: Vec2; to: Vec2 };
+  'dash': { playerId: string; dir: Vec2; distance: number };
   'locked': { baseId: number; ownerId: string; until: number };
   'unlocked': { baseId: number };
   'tool-used': { playerId: string; toolId: string };
