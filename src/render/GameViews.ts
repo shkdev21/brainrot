@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Game } from '../core/GameState';
 import { brainrotById } from '../data/brainrots';
+import { TOOLS } from '../data/tools';
 import { MUTATION_BY_ID } from '../data/mutations';
 import { displayName } from '../core/names';
 import { hashStr } from '../core/rng';
@@ -15,6 +16,10 @@ import type { MapRefs } from './MapBuilder';
 import { resolveCollisions } from './MapBuilder';
 import { buildBrainrotMesh, buildAvatar, animateRainbow } from './CharacterMesh';
 import { PlayerController } from './PlayerController';
+import { HUD } from '../ui/HUD';
+import { Toasts } from '../ui/Toasts';
+import { Shop } from '../ui/Shop';
+import { RebirthPanel } from '../ui/RebirthPanel';
 
 // 통합 계층 — core 시뮬레이션(20Hz)과 렌더링(rAF)을 잇는 모든 뷰 로직.
 
@@ -51,7 +56,8 @@ export class GameViews {
   private coinMat = new THREE.MeshLambertMaterial({ color: 0xffd700 });
   private trapMeshes = new Map<string, THREE.Mesh>();
   private turretMeshes = new Map<string, THREE.Group>();
-  private debugEl: HTMLDivElement;
+  private hud: HUD;
+  private toasts: Toasts;
   private accum = 0;
   private lastRaidToastAt = 0;
   onToast: (msg: string) => void = () => {};
@@ -132,11 +138,16 @@ export class GameViews {
       void thiefId;
     });
 
-    // 디버그 HUD (Task 11에서 정식 HUD로 교체)
-    this.debugEl = document.createElement('div');
-    this.debugEl.style.cssText =
-      'position:fixed;top:10px;left:10px;color:#fff;background:rgba(0,0,0,.5);padding:8px 12px;border-radius:8px;font:600 14px sans-serif;z-index:10;pointer-events:none;white-space:pre;';
-    document.getElementById('ui')!.appendChild(this.debugEl);
+    // 정식 UI
+    const uiRoot = document.getElementById('ui')!;
+    this.toasts = new Toasts(uiRoot);
+    this.onToast = (msg) => {
+      const kind = /🚨|😱|💸|📦/.test(msg) ? 'warn' : 'good';
+      this.toasts.show(msg, kind);
+    };
+    this.hud = new HUD(uiRoot);
+    new Shop(uiRoot, this.game, this.onToast);
+    new RebirthPanel(uiRoot, this.game, this.onToast);
 
     this.bindInteractions();
   }
@@ -163,6 +174,20 @@ export class GameViews {
         if (toolId) this.usePlayerTool(toolId);
       }
     });
+
+    // 개발용 치트(임시) — M키: $10B 충전
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'KeyM' && !e.repeat) {
+        this.game.player('p0')!.money += 10_000_000_000;
+        this.onToast('💵 치트: $10B 충전!');
+      }
+    });
+    // 콘솔용: __cheat.money() / __cheat.slots() / __cheat.tools()
+    Object.assign(window, { __cheat: {
+      money: (n = 10_000_000_000) => { this.game.player('p0')!.money += n; },
+      slots: (n = 30) => { this.game.player('p0')!.slots = n; },
+      tools: () => { this.game.player('p0')!.purchasedTools = TOOLS.map((t) => t.id); },
+    } });
   }
 
   private usePlayerTool(toolId: string): void {
@@ -660,12 +685,9 @@ export class GameViews {
       }
     }
 
-    // 디버그 HUD
-    const income = this.gameTotalIncome('p0');
-    const carrying = p0.carrying ? ' 🥷운반중' : '';
-    this.debugEl.textContent =
-      `💰 ${formatMoney(p0.money)}   ⚡${formatMoney(income)}/s   ♻️환생 ${p0.rebirth}\n` +
-      `슬롯 ${this.ownedCount('p0')}/${p0.slots}${carrying}   [E]구매/훔치기 [F]잠금 [1-0]도구`;
+    // HUD 갱신
+    this.hud.update(g, this.gameTotalIncome('p0'), this.ownedCount('p0'));
+    this.hud.updateCooldowns(p0, now);
   }
 
   ownedCount(playerId: string): number {

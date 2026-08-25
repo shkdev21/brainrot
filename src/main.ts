@@ -1,3 +1,4 @@
+import './ui/style.css';
 import { GameScene } from './render/Scene';
 import { buildMap } from './render/MapBuilder';
 import { GameViews } from './render/GameViews';
