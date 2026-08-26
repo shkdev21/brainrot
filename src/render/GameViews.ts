@@ -22,6 +22,8 @@ import { Shop } from '../ui/Shop';
 import { RebirthPanel } from '../ui/RebirthPanel';
 import { AuctionPanel } from '../ui/AuctionPanel';
 import { AuctionManager } from '../core/Auction';
+import { save as saveGame, load as loadGame, apply as applySave, resetSave } from '../core/Save';
+import { Sfx } from '../audio/Sfx';
 
 // 통합 계층 — core 시뮬레이션(20Hz)과 렌더링(rAF)을 잇는 모든 뷰 로직.
 
@@ -62,6 +64,8 @@ export class GameViews {
   private toasts: Toasts;
   private auction: AuctionManager;
   private auctionDisplay: ReturnType<typeof buildBrainrotMesh> | null = null;
+  readonly sfx = new Sfx();
+  private saveTimer: number | null = null;
   private accum = 0;
   private lastRaidToastAt = 0;
   onToast: (msg: string) => void = () => {};
@@ -102,11 +106,20 @@ export class GameViews {
     // 코어 이벤트 → 뷰
     const ev = this.game.events;
     ev.on('spawned', ({ uid }) => this.onSpawned(uid));
-    ev.on('purchased', ({ uid }) => this.onPurchased(uid));
-    ev.on('ownership-transferred', ({ uid }) => this.onTransferred(uid));
+    ev.on('purchased', ({ uid, buyerId }) => {
+      this.onPurchased(uid);
+      if (buyerId === 'p0') this.sfx.play('buy');
+    });
+    ev.on('ownership-transferred', ({ uid, newOwnerId }) => {
+      this.onTransferred(uid);
+      if (newOwnerId === 'p0') this.sfx.play('steal');
+    });
     ev.on('dropped', ({ uid }) => this.onDropped(uid));
     ev.on('despawned', ({ uid }) => this.removeView(uid));
-    ev.on('locked', ({ baseId }) => this.map.setBaseLocked(baseId, true));
+    ev.on('locked', ({ baseId }) => {
+      this.map.setBaseLocked(baseId, true);
+      this.sfx.play('lock');
+    });
     ev.on('unlocked', ({ baseId }) => this.map.setBaseLocked(baseId, false));
     ev.on('arrived', ({ uid }) => this.snapToSlot(uid));
     ev.on('knockback', ({ targetId, dir, force }) => {
@@ -133,6 +146,13 @@ export class GameViews {
     ev.on('trap-triggered', ({ trapId }) => this.removeTrapMesh(trapId));
     ev.on('turret-placed', ({ turretId, pos }) => this.placeTurretMesh(turretId, pos));
     ev.on('turret-expired', ({ turretId }) => this.removeTurretMesh(turretId));
+    ev.on('stunned', ({ targetId }) => {
+      if (targetId === 'p0') this.sfx.play('stunned');
+    });
+    ev.on('rebirth-done', ({ playerId }) => {
+      if (playerId === 'p0') this.sfx.play('rebirth');
+    });
+    ev.on('auction-started', () => this.sfx.play('auction'));
     ev.on('steal-started', ({ thiefId, fromBaseId }) => {
       const base = this.game.base(fromBaseId);
       if (base && base.ownerId === 'p0' && this.game.state.timeMs - this.lastRaidToastAt > 4000) {
@@ -196,12 +216,46 @@ export class GameViews {
         this.onToast('💵 치트: $10B 충전!');
       }
     });
-    // 콘솔용: __cheat.money() / __cheat.slots() / __cheat.tools()
+    // 콘솔용: __cheat.money() / __cheat.slots() / __cheat.tools() / __cheat.reset()
     Object.assign(window, { __cheat: {
       money: (n = 10_000_000_000) => { this.game.player('p0')!.money += n; },
       slots: (n = 30) => { this.game.player('p0')!.slots = n; },
       tools: () => { this.game.player('p0')!.purchasedTools = TOOLS.map((t) => t.id); },
+      reset: () => { resetSave(); location.reload(); },
     } });
+    // 음소거 (N키)
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'KeyN' && !e.repeat) {
+        this.sfx.muted = !this.sfx.muted;
+        this.onToast(this.sfx.muted ? '🔇 소리 끔' : '🔊 소리 켬');
+      }
+    });
+    // 자동 저장: 10초 + 종료 시
+    this.saveTimer = window.setInterval(() => {
+      saveGame(this.game, { x: this.player.pos.x, z: this.player.pos.z });
+    }, 10000);
+    window.addEventListener('beforeunload', () => {
+      saveGame(this.game, { x: this.player.pos.x, z: this.player.pos.z });
+    });
+  }
+
+  /** 저장 복원 — main.ts가 부팅 직후 호출 */
+  restoreFromSave(): boolean {
+    const data = loadGame();
+    if (!data) return false;
+    applySave(this.game, data);
+    // 층 잠금 비주얼 반영
+    for (const base of this.game.state.bases) {
+      this.map.setFloors(base.id, base.unlockedFloors);
+      this.map.setBaseLocked(base.id, this.game.state.timeMs < base.lockedUntil);
+    }
+    this.player.teleportTo(data.playerPos.x, data.playerPos.z);
+    this.onToast('💾 저장에서 이어서 시작!');
+    return true;
+  }
+
+  get saveTimerId(): number | null {
+    return this.saveTimer;
   }
 
   private usePlayerTool(toolId: string): void {
