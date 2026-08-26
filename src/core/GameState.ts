@@ -236,7 +236,7 @@ export class Game {
     return { ok: true };
   }
 
-  /** 기지 슬롯 배정 — 1층부터 순서대로, 층 해금은 Rebirth가 갱신 */
+  /** 기지 슬롯 배정 — 층당 10슬롯(좌우 패드×앞뒤), 1층부터 순서대로 */
   reserveSlot(p: PlayerState): { baseId: number; floor: 1 | 2 | 3; index: number } {
     const used = new Set(
       this.state.brainrots
@@ -244,8 +244,9 @@ export class Game {
         .map((i) => `${i.slot!.floor}:${i.slot!.index}`),
     );
     const floors: (1 | 2 | 3)[] = [1, 2, 3].slice(0, this.base(p.baseId)?.unlockedFloors ?? 1) as (1 | 2 | 3)[];
+    const perFloor = Math.min(p.slots, 10); // 층당 슬롯 상한
     for (const f of floors) {
-      for (let idx = 0; idx < p.slots; idx++) {
+      for (let idx = 0; idx < perFloor; idx++) {
         if (!used.has(`${f}:${idx}`)) {
           return { baseId: p.baseId, floor: f, index: idx };
         }
