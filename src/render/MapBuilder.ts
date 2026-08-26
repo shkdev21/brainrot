@@ -636,5 +636,5 @@ export function resolveCollisions(
     }
   }
   pos.x = Math.max(-FIELD_X + 1, Math.min(FIELD_X - 1, pos.x));
-  pos.z = Math.max(-FIELD_Z_MIN + 1, Math.min(FIELD_Z_MAX - 1, pos.z));
+  pos.z = Math.max(FIELD_Z_MIN + 1, Math.min(FIELD_Z_MAX - 1, pos.z));
 }
