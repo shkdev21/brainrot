@@ -23,7 +23,27 @@ export interface MapRefs {
   doorCenter: (baseId: number) => THREE.Vector3;
   setFloors: (baseId: number, floors: 1 | 2 | 3) => void;
   setBaseLocked: (baseId: number, locked: boolean) => void;
+  /** 기지 스킨 (환생 단계별) — 레인보우는 애니메이션 대상 반환 */
+  setBaseSkin: (baseId: number, skin: BaseSkin) => void;
+  /** 레인보우 스킨 애니메이션용 머티리얼 (render 루프에서 HSL 순환) */
+  rainbowMats: THREE.MeshLambertMaterial[];
 }
+
+export type BaseSkin = 'default' | 'gold' | 'diamond' | 'rainbow';
+
+interface SkinTargets {
+  frameMats: THREE.MeshLambertMaterial[];
+  trimMats: THREE.MeshLambertMaterial[];
+  barMat: THREE.MeshLambertMaterial | null;
+  matMeshes: THREE.Mesh[];
+}
+
+const SKIN_PALETTE: Record<BaseSkin, { frame: number; trim: number; bar: number; mat: [string, string] }> = {
+  default: { frame: 0x1e3a5f, trim: 0xffffff, bar: 0, mat: ['#d8c8a8', '#e6d7b8'] },
+  gold:    { frame: 0xB8860B, trim: 0xFFF3B0, bar: 0xE8B923, mat: ['#e8d070', '#f5e6a8'] },
+  diamond: { frame: 0x2f9ec4, trim: 0xffffff, bar: 0x4FC3F7, mat: ['#bfe8f5', '#dff4fb'] },
+  rainbow: { frame: 0x57606f, trim: 0xffffff, bar: 0xff0000, mat: ['#d8c8a8', '#e6d7b8'] },
+};
 
 const BASE_TRIM = [
   0xff7b54, 0x4ecdc4, 0xffd93d, 0x6c5ce7,
@@ -50,6 +70,9 @@ export function buildMap(scene: THREE.Scene, ownerNames?: string[]): MapRefs {
   const unlocked = new Map<number, 1 | 2 | 3>();
   const glassMats = new Map<number, THREE.MeshLambertMaterial[]>();
   const tierGroups = new Map<number, { t2: THREE.Group; t3: THREE.Group }>();
+  const skinTargets = new Map<number, SkinTargets>();
+  const matMaterialCache = new Map<string, THREE.MeshLambertMaterial>();
+  const rainbowMats: THREE.MeshLambertMaterial[] = [];
 
   // ── 지면: 밝은 라임 잔디 ─────────────────────────────────
   const grass = new THREE.Mesh(
@@ -143,6 +166,8 @@ export function buildMap(scene: THREE.Scene, ownerNames?: string[]): MapRefs {
     root.position.set(0, 0, 0); // 절대좌표로 배치
     scene.add(root);
     const S = (x: number) => side * x; // side 부호 헬퍼
+    const skins: SkinTargets = { frameMats: [], trimMats: [], barMat: null, matMeshes: [] };
+    skinTargets.set(i, skins);
 
     // ── 1층: 지면 레벨 콘크리트 판 ────────────────────────
     const slab1 = new THREE.Mesh(
@@ -152,6 +177,7 @@ export function buildMap(scene: THREE.Scene, ownerNames?: string[]): MapRefs {
     slab1.position.set(S((PLOT_INNER_X + TIER1_X) / 2 - 0.5), 0.25, c.z);
     slab1.receiveShadow = true;
     root.add(slab1);
+    skins.matMeshes.push(slab1);
 
     // ── 2층 티어 (해금 시) ────────────────────────────────
     const t2 = new THREE.Group();
@@ -164,6 +190,7 @@ export function buildMap(scene: THREE.Scene, ownerNames?: string[]): MapRefs {
     slab2.castShadow = true;
     slab2.receiveShadow = true;
     t2.add(slab2);
+    skins.matMeshes.push(slab2);
     root.add(t2);
 
     // ── 3층 티어 (해금 시) ────────────────────────────────
@@ -177,6 +204,7 @@ export function buildMap(scene: THREE.Scene, ownerNames?: string[]): MapRefs {
     slab3.castShadow = true;
     slab3.receiveShadow = true;
     t3.add(slab3);
+    skins.matMeshes.push(slab3);
     root.add(t3);
     tierGroups.set(i, { t2, t3 });
 
@@ -189,6 +217,7 @@ export function buildMap(scene: THREE.Scene, ownerNames?: string[]): MapRefs {
     backWall.position.set(S(PLOT_OUTER_X - 0.6), 4.6, c.z);
     backWall.castShadow = true;
     root.add(backWall);
+    skins.frameMats.push(backWall.material as THREE.MeshLambertMaterial);
     // 후벽 충돌
     colliders.push(
       { x1: S(PLOT_OUTER_X - 1.2), z1: c.z - PLOT_HALF_Z, x2: S(PLOT_OUTER_X - 1.2), z2: c.z + PLOT_HALF_Z },
@@ -220,12 +249,14 @@ export function buildMap(scene: THREE.Scene, ownerNames?: string[]): MapRefs {
     );
     trimBar.position.set(S(PLOT_OUTER_X - 0.6), 9.3, c.z);
     root.add(trimBar);
+    skins.barMat = trimBar.material as THREE.MeshLambertMaterial;
     const trimBarWhite = new THREE.Mesh(
       new THREE.BoxGeometry(1.4, 0.18, PLOT_HALF_Z * 2),
       lambert(0xffffff),
     );
     trimBarWhite.position.set(S(PLOT_OUTER_X - 0.6), 8.9, c.z);
     root.add(trimBarWhite);
+    skins.trimMats.push(trimBarWhite.material as THREE.MeshLambertMaterial);
 
     // ── 유리 전면 패널 (잠금 표시) ────────────────────────
     const glasses: THREE.MeshLambertMaterial[] = [];
@@ -250,6 +281,7 @@ export function buildMap(scene: THREE.Scene, ownerNames?: string[]): MapRefs {
       );
       trim.position.set(S(cx), cy, c.z);
       root.add(trim);
+      skins.trimMats.push(trim.material as THREE.MeshLambertMaterial);
     };
     whiteTrim(PLOT_INNER_X + 0.3, 0.42);
     const trim2 = new THREE.Mesh(
@@ -258,12 +290,14 @@ export function buildMap(scene: THREE.Scene, ownerNames?: string[]): MapRefs {
     );
     trim2.position.set(S(TIER1_X + 0.15), TIER_H + 0.12, c.z);
     t2.add(trim2);
+    skins.trimMats.push(trim2.material as THREE.MeshLambertMaterial);
     const trim3 = new THREE.Mesh(
       new THREE.BoxGeometry(0.55, 0.22, PLOT_HALF_Z * 2),
       lambert(0xffffff),
     );
     trim3.position.set(S(TIER2_X + 0.15), TIER_H * 2 + 0.12, c.z);
     t3.add(trim3);
+    skins.trimMats.push(trim3.material as THREE.MeshLambertMaterial);
 
     // 2·3층 전면 가드레일
     const rail2 = new THREE.Mesh(
@@ -463,6 +497,31 @@ export function buildMap(scene: THREE.Scene, ownerNames?: string[]): MapRefs {
         m.opacity = locked ? 0.75 : 0.45;
       }
     },
+    setBaseSkin: (baseId, skin) => {
+      const targets = skinTargets.get(baseId);
+      if (!targets) return;
+      const pal = SKIN_PALETTE[skin];
+      for (const m of targets.frameMats) m.color.setHex(pal.frame);
+      for (const m of targets.trimMats) m.color.setHex(pal.trim);
+      if (targets.barMat) {
+        targets.barMat.color.setHex(pal.bar);
+        // 레인보우 애니메이션 등록/해제
+        const idx = rainbowMats.indexOf(targets.barMat);
+        if (skin === 'rainbow' && idx < 0) rainbowMats.push(targets.barMat);
+        if (skin !== 'rainbow' && idx >= 0) rainbowMats.splice(idx, 1);
+      }
+      // 매트(스터드) 재질 교체 — 스킨별 캐시 (모든 슬랩이 같은 타일 밀도 사용)
+      const key = skin;
+      let mat = matMaterialCache.get(key);
+      if (!mat) {
+        mat = studMaterial(pal.mat[0], pal.mat[1], 10, 10);
+        matMaterialCache.set(key, mat);
+      }
+      for (const mesh of targets.matMeshes) {
+        mesh.material = mat;
+      }
+    },
+    rainbowMats,
   };
 }
 

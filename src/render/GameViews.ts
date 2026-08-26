@@ -15,6 +15,8 @@ import { GameScene } from './Scene';
 import type { MapRefs } from './MapBuilder';
 import { resolveCollisions } from './MapBuilder';
 import { buildBrainrotMesh, buildAvatar, animateRainbow } from './CharacterMesh';
+import { buildToolMesh } from './ToolMeshes';
+import type { BaseSkin } from './MapBuilder';
 import { PlayerController } from './PlayerController';
 import { HUD } from '../ui/HUD';
 import { Toasts } from '../ui/Toasts';
@@ -66,6 +68,7 @@ export class GameViews {
   private auctionDisplay: ReturnType<typeof buildBrainrotMesh> | null = null;
   readonly sfx = new Sfx();
   private saveTimer: number | null = null;
+  private heldTool: { group: THREE.Group; swingAt: number; removeAt: number } | null = null;
   private accum = 0;
   private lastRaidToastAt = 0;
   onToast: (msg: string) => void = () => {};
@@ -150,7 +153,13 @@ export class GameViews {
       if (targetId === 'p0') this.sfx.play('stunned');
     });
     ev.on('rebirth-done', ({ playerId }) => {
-      if (playerId === 'p0') this.sfx.play('rebirth');
+      if (playerId === 'p0') {
+        this.sfx.play('rebirth');
+        this.applyBaseSkin(playerId);
+      }
+    });
+    ev.on('tool-used', ({ playerId, toolId }) => {
+      if (playerId === 'p0') this.showHeldTool(toolId);
     });
     ev.on('auction-started', () => this.sfx.play('auction'));
     ev.on('steal-started', ({ thiefId, fromBaseId }) => {
@@ -250,6 +259,7 @@ export class GameViews {
       this.map.setBaseLocked(base.id, this.game.state.timeMs < base.lockedUntil);
     }
     this.player.teleportTo(data.playerPos.x, data.playerPos.z);
+    this.applyBaseSkin('p0');
     this.onToast('💾 저장에서 이어서 시작!');
     return true;
   }
@@ -754,6 +764,29 @@ export class GameViews {
       }
     }
 
+    // 손에 든 도구 스윙 애니메이션
+    if (this.heldTool) {
+      const elapsed = performance.now() - this.heldTool.swingAt;
+      if (elapsed < 350) {
+        // 0.35초 스윙: 뒤로 → 앞으로
+        const t2 = elapsed / 350;
+        this.heldTool.group.rotation.x = -0.4 + Math.sin(t2 * Math.PI) * -1.6;
+      } else {
+        this.heldTool.group.rotation.x = -0.4;
+      }
+      if (performance.now() >= this.heldTool.removeAt) {
+        this.player.mesh.remove(this.heldTool.group);
+        this.heldTool = null;
+      }
+    }
+
+    // 레인보우 스킨 트림 색 순환
+    if (this.map.rainbowMats.length > 0) {
+      for (let i = 0; i < this.map.rainbowMats.length; i++) {
+        this.map.rainbowMats[i].color.setHSL((t * 0.15 + i * 0.12) % 1, 0.85, 0.55);
+      }
+    }
+
     // 경매 전시 회전
     if (this.auctionDisplay) {
       this.auctionDisplay.group.rotation.y += dt * 1.2;
@@ -781,6 +814,33 @@ export class GameViews {
       this.gs.scene.remove(this.auctionDisplay.group);
       this.auctionDisplay = null;
     }
+  }
+
+  /** 환생 단계별 기지 스킨 — 기본→골드→다이아→레인보우 */
+  applyBaseSkin(playerId: string): void {
+    const p = this.game.player(playerId);
+    if (!p) return;
+    const skin: BaseSkin =
+      p.rebirth >= 5 ? 'rainbow' :
+      p.rebirth >= 3 ? 'diamond' :
+      p.rebirth >= 2 ? 'gold' : 'default';
+    this.map.setBaseSkin(p.baseId, skin);
+  }
+
+  /** 도구 사용 — 손에 들고 스윙 */
+  private showHeldTool(toolId: string): void {
+    const mesh = buildToolMesh(toolId);
+    if (!mesh) return;
+    if (this.heldTool) this.player.mesh.remove(this.heldTool.group);
+    // 오른손 위치 (아바타 로컬 좌표)
+    mesh.position.set(0.55, 1.25, 0.25);
+    mesh.rotation.set(-0.4, 0, -0.15);
+    this.player.mesh.add(mesh);
+    this.heldTool = {
+      group: mesh,
+      swingAt: performance.now(),
+      removeAt: performance.now() + 1200,
+    };
   }
 
   ownedCount(playerId: string): number {
