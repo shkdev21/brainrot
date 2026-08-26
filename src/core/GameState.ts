@@ -85,6 +85,7 @@ export class Game {
       turrets: [],
       nextSpawnAt: {},
       nextAuctionAt: 240000,
+      auction: null,
       seq: 0,
       positions: {},
     };

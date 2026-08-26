@@ -20,6 +20,8 @@ import { HUD } from '../ui/HUD';
 import { Toasts } from '../ui/Toasts';
 import { Shop } from '../ui/Shop';
 import { RebirthPanel } from '../ui/RebirthPanel';
+import { AuctionPanel } from '../ui/AuctionPanel';
+import { AuctionManager } from '../core/Auction';
 
 // 통합 계층 — core 시뮬레이션(20Hz)과 렌더링(rAF)을 잇는 모든 뷰 로직.
 
@@ -58,6 +60,8 @@ export class GameViews {
   private turretMeshes = new Map<string, THREE.Group>();
   private hud: HUD;
   private toasts: Toasts;
+  private auction: AuctionManager;
+  private auctionDisplay: ReturnType<typeof buildBrainrotMesh> | null = null;
   private accum = 0;
   private lastRaidToastAt = 0;
   onToast: (msg: string) => void = () => {};
@@ -148,6 +152,16 @@ export class GameViews {
     this.hud = new HUD(uiRoot);
     new Shop(uiRoot, this.game, this.onToast);
     new RebirthPanel(uiRoot, this.game, this.onToast);
+    this.auction = new AuctionManager(this.game, (seed ?? 1) * 7717);
+    new AuctionPanel(uiRoot, this.game, this.auction, this.onToast);
+    ev.on('auction-started', ({ defId, startPrice }) => {
+      this.onToast(`🔨 경매 시작! ${displayName(defId)} — 시작가 ${formatMoney(startPrice)}`);
+      this.showAuctionDisplay(defId);
+    });
+    ev.on('auction-won', ({ winnerId, amount }) => {
+      if (winnerId === 'p0') this.onToast(`🎉 경매 낙찰! ${formatMoney(amount)}에 획득!`);
+      this.hideAuctionDisplay();
+    });
 
     this.bindInteractions();
   }
@@ -466,6 +480,7 @@ export class GameViews {
         this.accum -= STEP;
         steps++;
         this.game.tick(STEP);
+        this.auction.update();
         this.updateBots();
         this.syncPositions();
       }
@@ -685,9 +700,33 @@ export class GameViews {
       }
     }
 
+    // 경매 전시 회전
+    if (this.auctionDisplay) {
+      this.auctionDisplay.group.rotation.y += dt * 1.2;
+      this.auctionDisplay.group.position.y = 3.2 + Math.sin(t * 2) * 0.25;
+    }
+
     // HUD 갱신
     this.hud.update(g, this.gameTotalIncome('p0'), this.ownedCount('p0'));
     this.hud.updateCooldowns(p0, now);
+  }
+
+  /** 경매 품목 전시 — 북쪽 게이트 앞 부유 회전 */
+  private showAuctionDisplay(defId: string): void {
+    this.hideAuctionDisplay();
+    const def = brainrotById.get(defId)!;
+    const visual = buildBrainrotMesh(def.id, def.rarity, null);
+    visual.group.position.set(0, 3.2, -38);
+    visual.group.scale.multiplyScalar(1.4);
+    this.gs.scene.add(visual.group);
+    this.auctionDisplay = visual;
+  }
+
+  private hideAuctionDisplay(): void {
+    if (this.auctionDisplay) {
+      this.gs.scene.remove(this.auctionDisplay.group);
+      this.auctionDisplay = null;
+    }
   }
 
   ownedCount(playerId: string): number {

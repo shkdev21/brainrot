@@ -125,6 +125,16 @@ export interface TurretInstance {
   nextFireAt: number;
 }
 
+export interface AuctionState {
+  id: string;
+  defId: string;
+  mutation: string | null;
+  startPrice: number;
+  currentBid: number;
+  highestBidder: string | null;
+  endsAt: number;
+}
+
 export interface GameState {
   timeMs: number;
   seed: number;
@@ -136,6 +146,7 @@ export interface GameState {
   /** 다음 스폰 예정 시각 (등급별) */
   nextSpawnAt: Record<string, number>;
   nextAuctionAt: number;
+  auction: AuctionState | null;
   seq: number;
   /** 플레이어 xz 좌표 — 렌더 통합 계층이 매 프레임 갱신, core는 판정에만 읽기 */
   positions: Record<string, Vec2>;
