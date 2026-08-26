@@ -25,8 +25,8 @@ export class GameScene {
     );
     this.camera.position.set(0, 24, 46);
 
-    this.scene.add(new THREE.HemisphereLight(0xcfe8ff, 0x557744, 0.85));
-    const sun = new THREE.DirectionalLight(0xfff2cc, 1.15);
+    this.scene.add(new THREE.HemisphereLight(0xdff2ff, 0x6a9955, 1.05));
+    const sun = new THREE.DirectionalLight(0xfff6dd, 1.45);
     sun.position.set(60, 90, 40);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
