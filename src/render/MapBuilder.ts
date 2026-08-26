@@ -6,8 +6,8 @@ import {
   BASE_COUNT, baseSide, baseCenter,
 } from '../core/Layout';
 
-// 맵 빌더 — 원작 스타일: 중앙 레드카펫 거리 + 양옆 "계단식 전시 플랫폼" 기지.
-// 기지 = 콘크리트 티어(1~3층) + 유리 전면(잠금 표시) + 후벽 이름 간판.
+// 맵 빌더 — 원작 스타일 거리 + "박스형 전시 기지".
+// 기지 = 앞면 개방(잠금 철창) + 3면 벽 + 등분 3티어 + 좌/우 진열 영역.
 
 export interface Seg {
   x1: number; z1: number; x2: number; z2: number;
@@ -23,11 +23,8 @@ export interface MapRefs {
   doorCenter: (baseId: number) => THREE.Vector3;
   setFloors: (baseId: number, floors: 1 | 2 | 3) => void;
   setBaseLocked: (baseId: number, locked: boolean) => void;
-  /** 기지 스킨 (환생 단계별) — 레인보우는 애니메이션 대상 반환 */
   setBaseSkin: (baseId: number, skin: BaseSkin) => void;
-  /** 간판 갱신 — 이름 + 보유 수 */
   setBaseInfo: (baseId: number, count: number, slots: number) => void;
-  /** 레인보우 스킨 애니메이션용 머티리얼 (render 루프에서 HSL 순환) */
   rainbowMats: THREE.MeshLambertMaterial[];
 }
 
@@ -47,20 +44,19 @@ const SKIN_PALETTE: Record<BaseSkin, { frame: number; trim: number; bar: number;
   rainbow: { frame: 0x57606f, trim: 0xffffff, bar: 0xff0000, mat: ['#d8c8a8', '#e6d7b8'] },
 };
 
-const BASE_TRIM = [
-  0xff7b54, 0x4ecdc4, 0xffd93d, 0x6c5ce7,
-  0xff9ff3, 0x2e86de, 0xf9ca24, 0x26de81,
-];
-const SLOT_PER_FLOOR = 10;
-const NAVY = 0x1e3a5f;        // 원작 기지 프레임 네이비
-const MAT_BEIGE = '#d8c8a8';  // 전시 매트 바닥
+const NAVY = 0x1e3a5f;
+const MAT_BEIGE = '#d8c8a8';
+const PAD_BEIGE = 0xc9b694; // 진열 패드 (매트보다 어둡게)
 const GLASS_OPEN = 0x9fd8ff;
 const GLASS_LOCKED = 0xff5252;
 
-/** 티어 경계(|x| 기준): 13~24 1층 / 24~30 2층 / 30~35 3층 */
-const TIER1_X = 24;
-const TIER2_X = 30;
+/** 등분 티어 경계(|x| 기준): 13 | 20.33 | 27.67 | 35 */
+const PLOT_DEPTH = PLOT_OUTER_X - PLOT_INNER_X; // 22
+const THIRD = PLOT_DEPTH / 3;
+const TIER1_X = PLOT_INNER_X + THIRD;
+const TIER2_X = PLOT_INNER_X + THIRD * 2;
 const TIER_H = 2.6;
+const WALL_T = 0.6;
 
 function lambert(color: number): THREE.MeshLambertMaterial {
   return new THREE.MeshLambertMaterial({ color });
@@ -69,16 +65,17 @@ function lambert(color: number): THREE.MeshLambertMaterial {
 export function buildMap(scene: THREE.Scene, ownerNames?: string[]): MapRefs {
   const colliders: Seg[] = [];
   const unlocked = new Map<number, 1 | 2 | 3>();
+  const skinOf = new Map<number, BaseSkin>();
   const glassMats = new Map<number, THREE.MeshLambertMaterial[]>();
   const tierGroups = new Map<number, { t2: THREE.Group; t3: THREE.Group }>();
   const skinTargets = new Map<number, SkinTargets>();
   const lockBarGroups = new Map<number, THREE.Group>();
   const nameSignCanvases = new Map<number, { canvas: HTMLCanvasElement; tex: THREE.CanvasTexture; name: string }>();
-  const lockBarBuilders = new Map<number, (floors: number) => void>();
+  const rebuildables = new Map<number, Array<() => void>>(); // 층 의존 재구성 목록
   const matMaterialCache = new Map<string, THREE.MeshLambertMaterial>();
   const rainbowMats: THREE.MeshLambertMaterial[] = [];
 
-  // ── 지면: 밝은 라임 잔디 ─────────────────────────────────
+  // ── 지면: 밝은 잔디 (격자 타일) ───────────────────────────
   const grass = new THREE.Mesh(
     new THREE.BoxGeometry(FIELD_X * 2, 1, FIELD_Z_MAX - FIELD_Z_MIN),
     floorMaterial('#5fca64', FIELD_X * 2, FIELD_Z_MAX - FIELD_Z_MIN),
@@ -106,7 +103,7 @@ export function buildMap(scene: THREE.Scene, ownerNames?: string[]): MapRefs {
     scene.add(walk);
   }
 
-  // ── 레드카펫 (황금 테두리+스탠션) ─────────────────────────
+  // ── 레드카펫 ──────────────────────────────────────────────
   const carpet = new THREE.Mesh(
     new THREE.BoxGeometry(CARPET_HALF_W * 2, 0.36, CARPET_TO_Z - CARPET_FROM_Z + 6),
     floorMaterial('#eb544c', CARPET_HALF_W * 2, CARPET_TO_Z - CARPET_FROM_Z + 6, { linePx: 2, lineDark: 0.08 }),
@@ -162,72 +159,68 @@ export function buildMap(scene: THREE.Scene, ownerNames?: string[]): MapRefs {
   signFace.position.set(0, 8.6, CARPET_FROM_Z - 2.25);
   scene.add(signFace);
 
-  // ── 8개 계단식 전시 기지 ──────────────────────────────────
+  // ── 8개 박스형 전시 기지 ──────────────────────────────────
   for (let i = 0; i < BASE_COUNT; i++) {
     const side = baseSide(i);
     const c = baseCenter(i);
     const root = new THREE.Group();
-    root.position.set(0, 0, 0); // 절대좌표로 배치
     scene.add(root);
-    const S = (x: number) => side * x; // side 부호 헬퍼
+    const S = (x: number) => side * x;
     const skins: SkinTargets = { frameMats: [], trimMats: [], barMat: null, matMeshes: [] };
     skinTargets.set(i, skins);
+    skinOf.set(i, 'default');
+    rebuildables.set(i, []);
 
-    // ── 1층: 지면 레벨 콘크리트 판 ────────────────────────
+    // ── 티어 슬랩 (등분 3단) ────────────────────────────────
     const slab1 = new THREE.Mesh(
-      new THREE.BoxGeometry(TIER1_X - PLOT_INNER_X + 1, 0.5, PLOT_HALF_Z * 2),
-      floorMaterial(MAT_BEIGE, TIER1_X - PLOT_INNER_X + 1, PLOT_HALF_Z * 2, { lineDark: 0.12 }),
+      new THREE.BoxGeometry(THIRD + 1, 0.5, PLOT_HALF_Z * 2 - WALL_T),
+      floorMaterial(MAT_BEIGE, THIRD + 1, PLOT_HALF_Z * 2 - WALL_T, { lineDark: 0.12 }),
     );
-    slab1.position.set(S((PLOT_INNER_X + TIER1_X) / 2 - 0.5), 0.25, c.z);
+    slab1.position.set(S(PLOT_INNER_X + THIRD / 2 - 0.5), 0.25, c.z);
     slab1.receiveShadow = true;
     root.add(slab1);
     skins.matMeshes.push(slab1);
 
-    // ── 2층 티어 (해금 시) ────────────────────────────────
     const t2 = new THREE.Group();
     t2.visible = false;
     const slab2 = new THREE.Mesh(
-      new THREE.BoxGeometry(TIER2_X - TIER1_X, TIER_H + 0.5, PLOT_HALF_Z * 2),
-      floorMaterial(MAT_BEIGE, TIER2_X - TIER1_X, PLOT_HALF_Z * 2, { lineDark: 0.12 }),
+      new THREE.BoxGeometry(THIRD, TIER_H + 0.5, PLOT_HALF_Z * 2 - WALL_T),
+      floorMaterial(MAT_BEIGE, THIRD, PLOT_HALF_Z * 2 - WALL_T, { lineDark: 0.12 }),
     );
-    slab2.position.set(S((TIER1_X + TIER2_X) / 2), (TIER_H + 0.5) / 2, c.z);
+    slab2.position.set(S(TIER1_X + THIRD / 2), (TIER_H + 0.5) / 2, c.z);
     slab2.castShadow = true;
     slab2.receiveShadow = true;
     t2.add(slab2);
-    skins.matMeshes.push(slab2);
     root.add(t2);
+    skins.matMeshes.push(slab2);
 
-    // ── 3층 티어 (해금 시) ────────────────────────────────
     const t3 = new THREE.Group();
     t3.visible = false;
     const slab3 = new THREE.Mesh(
-      new THREE.BoxGeometry(PLOT_OUTER_X - TIER2_X, TIER_H * 2 + 0.5, PLOT_HALF_Z * 2),
-      floorMaterial(MAT_BEIGE, PLOT_OUTER_X - TIER2_X, PLOT_HALF_Z * 2, { lineDark: 0.12 }),
+      new THREE.BoxGeometry(THIRD, TIER_H * 2 + 0.5, PLOT_HALF_Z * 2 - WALL_T),
+      floorMaterial(MAT_BEIGE, THIRD, PLOT_HALF_Z * 2 - WALL_T, { lineDark: 0.12 }),
     );
-    slab3.position.set(S((TIER2_X + PLOT_OUTER_X) / 2), (TIER_H * 2 + 0.5) / 2, c.z);
+    slab3.position.set(S(TIER2_X + THIRD / 2), (TIER_H * 2 + 0.5) / 2, c.z);
     slab3.castShadow = true;
     slab3.receiveShadow = true;
     t3.add(slab3);
-    skins.matMeshes.push(slab3);
     root.add(t3);
+    skins.matMeshes.push(slab3);
     tierGroups.set(i, { t2, t3 });
 
-    // ── 후벽 타워: 이름 간판 ─────────────────────────────
-    const trimColor = BASE_TRIM[i];
+    // ── 후벽 (이름 간판 타워) ────────────────────────────────
     const backWall = new THREE.Mesh(
-      new THREE.BoxGeometry(1.2, 9.2, PLOT_HALF_Z * 2),
+      new THREE.BoxGeometry(WALL_T, 9.2, PLOT_HALF_Z * 2),
       lambert(NAVY),
     );
-    backWall.position.set(S(PLOT_OUTER_X - 0.6), 4.6, c.z);
+    backWall.position.set(S(PLOT_OUTER_X - WALL_T / 2), 4.6, c.z);
     backWall.castShadow = true;
     root.add(backWall);
     skins.frameMats.push(backWall.material as THREE.MeshLambertMaterial);
-    // 후벽 충돌
     colliders.push(
-      { x1: S(PLOT_OUTER_X - 1.2), z1: c.z - PLOT_HALF_Z, x2: S(PLOT_OUTER_X - 1.2), z2: c.z + PLOT_HALF_Z },
+      { x1: S(PLOT_OUTER_X - WALL_T), z1: c.z - PLOT_HALF_Z, x2: S(PLOT_OUTER_X - WALL_T), z2: c.z + PLOT_HALF_Z },
     );
 
-    // 이름 간판 (캔버스)
     const name = ownerNames?.[i] ?? `기지 ${i + 1}`;
     const nc = document.createElement('canvas');
     nc.width = 256; nc.height = 96;
@@ -236,139 +229,139 @@ export function buildMap(scene: THREE.Scene, ownerNames?: string[]): MapRefs {
     nctx.fillStyle = '#ffd43b'; nctx.fillRect(0, 0, 256, 14);
     nctx.font = 'bold 44px sans-serif'; nctx.fillStyle = '#fff';
     nctx.textAlign = 'center'; nctx.textBaseline = 'middle';
-    nctx.fillText(name, 128, 58);
+    nctx.fillText(name, 128, 52);
     const nameTex = new THREE.CanvasTexture(nc);
     nameSignCanvases.set(i, { canvas: nc, tex: nameTex, name });
     const nameSign = new THREE.Mesh(
       new THREE.PlaneGeometry(7.5, 2.8),
       new THREE.MeshBasicMaterial({ map: nameTex }),
     );
-    // 거리 쪽에서 보이도록 방향
-    const signDir = side < 0 ? 1 : -1;
-    nameSign.position.set(S(PLOT_OUTER_X - 1.25), 6.6, c.z);
-    nameSign.rotation.y = signDir > 0 ? Math.PI / 2 : -Math.PI / 2;
+    nameSign.position.set(S(PLOT_OUTER_X - WALL_T - 0.05), 6.6, c.z);
+    nameSign.rotation.y = side < 0 ? Math.PI / 2 : -Math.PI / 2;
     root.add(nameSign);
-    // 트림 라인 (기지 색)
     const trimBar = new THREE.Mesh(
-      new THREE.BoxGeometry(1.3, 0.7, PLOT_HALF_Z * 2),
-      lambert(trimColor),
+      new THREE.BoxGeometry(WALL_T + 0.1, 0.7, PLOT_HALF_Z * 2),
+      lambert([0xff7b54, 0x4ecdc4, 0xffd93d, 0x6c5ce7, 0xff9ff3, 0x2e86de, 0xf9ca24, 0x26de81][i]),
     );
-    trimBar.position.set(S(PLOT_OUTER_X - 0.6), 9.3, c.z);
+    trimBar.position.set(S(PLOT_OUTER_X - WALL_T / 2), 9.3, c.z);
     root.add(trimBar);
     skins.barMat = trimBar.material as THREE.MeshLambertMaterial;
-    const trimBarWhite = new THREE.Mesh(
-      new THREE.BoxGeometry(1.4, 0.18, PLOT_HALF_Z * 2),
-      lambert(0xffffff),
-    );
-    trimBarWhite.position.set(S(PLOT_OUTER_X - 0.6), 8.9, c.z);
-    root.add(trimBarWhite);
-    skins.trimMats.push(trimBarWhite.material as THREE.MeshLambertMaterial);
 
-    // ── 유리 전면 패널 (잠금 표시) ────────────────────────
-    const glasses: THREE.MeshLambertMaterial[] = [];
-    const glassFront = (
-      cx: number, cy: number, w: number, h: number,
-    ) => {
-      const mat = new THREE.MeshLambertMaterial({
-        color: GLASS_OPEN, transparent: true, opacity: 0.45,
-      });
-      const panel = new THREE.Mesh(new THREE.BoxGeometry(0.25, h, w), mat);
-      panel.position.set(S(cx), cy, c.z);
-      root.add(panel);
-      glasses.push(mat);
-    };
-    // 1층 전면: 낮은 유리 가드레일 (출입은 열림 상태에서 자유)
-    glassFront(PLOT_INNER_X + 0.3, 0.85, PLOT_HALF_Z * 2 - 1, 1.2);
-    // 흰 전면 테두리 (원작 디스플레이 박스 화이트 라인)
-    const whiteTrim = (cx: number, cy: number) => {
-      const trim = new THREE.Mesh(
-        new THREE.BoxGeometry(0.55, 0.22, PLOT_HALF_Z * 2),
-        lambert(0xffffff),
+    // ── 양측벽 (전면 개방) — 층 해금에 따라 높이 증축 ───────
+    for (const sz of [-1, 1]) {
+      const zEdge = c.z + sz * (PLOT_HALF_Z - WALL_T / 2);
+      // 충돌 — 항상 전체 폭
+      colliders.push(
+        { x1: S(PLOT_INNER_X + 0.3), z1: zEdge, x2: S(PLOT_OUTER_X - WALL_T), z2: zEdge },
       );
-      trim.position.set(S(cx), cy, c.z);
-      root.add(trim);
-      skins.trimMats.push(trim.material as THREE.MeshLambertMaterial);
-    };
-    whiteTrim(PLOT_INNER_X + 0.3, 0.42);
-    const trim2 = new THREE.Mesh(
-      new THREE.BoxGeometry(0.55, 0.22, PLOT_HALF_Z * 2),
-      lambert(0xffffff),
-    );
-    trim2.position.set(S(TIER1_X + 0.15), TIER_H + 0.12, c.z);
-    t2.add(trim2);
-    skins.trimMats.push(trim2.material as THREE.MeshLambertMaterial);
-    const trim3 = new THREE.Mesh(
-      new THREE.BoxGeometry(0.55, 0.22, PLOT_HALF_Z * 2),
-      lambert(0xffffff),
-    );
-    trim3.position.set(S(TIER2_X + 0.15), TIER_H * 2 + 0.12, c.z);
-    t3.add(trim3);
-    skins.trimMats.push(trim3.material as THREE.MeshLambertMaterial);
+      const rebuild = () => {
+        // 기존 벽 제거
+        for (const ch of [...root.children]) {
+          if (ch instanceof THREE.Mesh && Math.abs(ch.position.z - zEdge) < 0.05 && ch !== backWall) {
+            root.remove(ch);
+            const mi = skins.frameMats.indexOf(ch.material as THREE.MeshLambertMaterial);
+            if (mi >= 0) skins.frameMats.splice(mi, 1);
+          }
+        }
+        const floors = unlocked.get(i) ?? 1;
+        const h = floors * TIER_H + 1.4;
+        const pal = SKIN_PALETTE[skinOf.get(i) ?? 'default'];
+        const wall = new THREE.Mesh(
+          new THREE.BoxGeometry(PLOT_OUTER_X - PLOT_INNER_X - WALL_T, h, WALL_T),
+          lambert(pal.frame),
+        );
+        wall.position.set(S((PLOT_INNER_X + PLOT_OUTER_X) / 2), h / 2, zEdge);
+        wall.castShadow = true;
+        wall.receiveShadow = true;
+        root.add(wall);
+        skins.frameMats.push(wall.material as THREE.MeshLambertMaterial);
+        // 상단 흰 테두리
+        const cap = new THREE.Mesh(
+          new THREE.BoxGeometry(PLOT_OUTER_X - PLOT_INNER_X - WALL_T + 0.2, 0.18, WALL_T + 0.2),
+          lambert(0xffffff),
+        );
+        cap.position.set(S((PLOT_INNER_X + PLOT_OUTER_X) / 2), h + 0.1, zEdge);
+        root.add(cap);
+        skins.trimMats.push(cap.material as THREE.MeshLambertMaterial);
+      };
+      rebuild();
+      rebuildables.get(i)!.push(rebuild);
+    }
 
-    // 2·3층 전면 가드레일
-    const rail2 = new THREE.Mesh(
-      new THREE.BoxGeometry(0.25, 1.1, PLOT_HALF_Z * 2),
-      new THREE.MeshLambertMaterial({ color: GLASS_OPEN, transparent: true, opacity: 0.4 }),
+    // ── 좌/우 진열 영역 패드 (층별 2개씩) ────────────────────
+    const addZonePads = (
+      group: THREE.Group, y: number, bandStart: number,
+    ) => {
+      for (const sz of [-1, 1]) {
+        const zoneZ = c.z + sz * 3.6;
+        const pad = new THREE.Mesh(
+          new THREE.BoxGeometry(THIRD - 1.6, 0.14, 4.4),
+          lambert(PAD_BEIGE),
+        );
+        pad.position.set(S(bandStart + THIRD / 2), y + 0.07, zoneZ);
+        pad.receiveShadow = true;
+        group.add(pad);
+        // 흰 테두리 프레임
+        const frameMat = lambert(0xffffff);
+        const fx = THIRD - 1.4;
+        const fz = 4.6;
+        const mk = (w: number, d: number, ox: number, oz: number) => {
+          const m = new THREE.Mesh(new THREE.BoxGeometry(w, 0.1, d), frameMat);
+          m.position.set(S(bandStart + THIRD / 2 + ox), y + 0.12, zoneZ + oz);
+          group.add(m);
+        };
+        mk(fx, 0.22, 0, -fz / 2);
+        mk(fx, 0.22, 0, fz / 2);
+        mk(0.22, fz, -fx / 2, 0);
+        mk(0.22, fz, fx / 2, 0);
+        skins.trimMats.push(frameMat);
+      }
+    };
+    addZonePads(root, 0.5, PLOT_INNER_X + 0.5);
+    addZonePads(t2, TIER_H + 0.5, TIER1_X);
+    addZonePads(t3, TIER_H * 2 + 0.5, TIER2_X);
+
+    // ── 티어 계단 (기지 안쪽, z 중앙 통로) ──────────────────
+    const stairZ = c.z;
+    for (const [edgeX, topY] of [[TIER1_X, TIER_H], [TIER2_X, TIER_H * 2]] as const) {
+      for (let s = 0; s < 5; s++) {
+        const step = new THREE.Mesh(
+          new THREE.BoxGeometry(0.95, topY / 5 * (s + 1), 2.4),
+          lambert(0x9aa0aa),
+        );
+        step.position.set(S(edgeX - 0.5 - s * 0.95), (topY / 5 * (s + 1)) / 2, stairZ);
+        (edgeX === TIER1_X ? root : edgeX === TIER2_X ? t2 : t3).add(step);
+      }
+    }
+
+    // ── 전면 유리 + 흰 테두리 ────────────────────────────────
+    const glasses: THREE.MeshLambertMaterial[] = [];
+    const glassMat = new THREE.MeshLambertMaterial({
+      color: GLASS_OPEN, transparent: true, opacity: 0.45,
+    });
+    const panel = new THREE.Mesh(
+      new THREE.BoxGeometry(0.25, 1.2, PLOT_HALF_Z * 2 - 1),
+      glassMat,
     );
-    rail2.position.set(S(TIER1_X + 0.15), TIER_H + 0.55, c.z);
-    t2.add(rail2);
-    glasses.push(rail2.material as THREE.MeshLambertMaterial);
-    const rail3 = new THREE.Mesh(
-      new THREE.BoxGeometry(0.25, 1.1, PLOT_HALF_Z * 2),
-      new THREE.MeshLambertMaterial({ color: GLASS_OPEN, transparent: true, opacity: 0.4 }),
-    );
-    rail3.position.set(S(TIER2_X + 0.15), TIER_H * 2 + 0.55, c.z);
-    t3.add(rail3);
-    glasses.push(rail3.material as THREE.MeshLambertMaterial);
+    panel.position.set(S(PLOT_INNER_X + 0.3), 0.85, c.z);
+    root.add(panel);
+    glasses.push(glassMat);
     glassMats.set(i, glasses);
 
-    // ── 측벽 (양옆 저벽, 티어 높이 따라) ─────────────────
-    for (const sz of [-1, 1]) {
-      const side1 = new THREE.Mesh(
-        new THREE.BoxGeometry(TIER1_X - PLOT_INNER_X, 1.0, 0.6),
-        lambert(NAVY),
-      );
-      side1.position.set(S((PLOT_INNER_X + TIER1_X) / 2), 0.5, c.z + sz * PLOT_HALF_Z);
-      root.add(side1);
-      const side2 = new THREE.Mesh(
-        new THREE.BoxGeometry(TIER2_X - TIER1_X, TIER_H + 1.0, 0.6),
-        lambert(NAVY),
-      );
-      side2.position.set(S((TIER1_X + TIER2_X) / 2), (TIER_H + 1) / 2, c.z + sz * PLOT_HALF_Z);
-      t2.add(side2);
-      const side3 = new THREE.Mesh(
-        new THREE.BoxGeometry(PLOT_OUTER_X - TIER2_X, TIER_H * 2 + 1, 0.6),
-        lambert(NAVY),
-      );
-      side3.position.set(S((TIER2_X + PLOT_OUTER_X) / 2), (TIER_H * 2 + 1) / 2, c.z + sz * PLOT_HALF_Z);
-      t3.add(side3);
-    }
+    const frontTrim = new THREE.Mesh(
+      new THREE.BoxGeometry(0.55, 0.22, PLOT_HALF_Z * 2),
+      lambert(0xffffff),
+    );
+    frontTrim.position.set(S(PLOT_INNER_X + 0.3), 0.42, c.z);
+    root.add(frontTrim);
+    skins.trimMats.push(frontTrim.material as THREE.MeshLambertMaterial);
 
-    // ── 티어 사이 계단 (z 양쪽 가장자리, 번갈아) ───────────
-    const stairEdgeZ = c.z + (i % 2 === 0 ? 1 : -1) * (PLOT_HALF_Z - 1.2);
-    for (let s = 0; s < 5; s++) {
-      const step = new THREE.Mesh(
-        new THREE.BoxGeometry(0.9, (TIER_H / 5) * (s + 1), 1.8),
-        lambert(NAVY),
-      );
-      step.position.set(S(TIER1_X - 0.45 - s * 0.9), (TIER_H / 5) * (s + 1) / 2, stairEdgeZ);
-      root.add(step);
-    }
-    for (let s = 0; s < 5; s++) {
-      const step = new THREE.Mesh(
-        new THREE.BoxGeometry(0.9, (TIER_H / 5) * (s + 1), 1.8),
-        lambert(NAVY),
-      );
-      step.position.set(S(TIER2_X - 0.45 - s * 0.9), TIER_H + (TIER_H / 5) * (s + 1) / 2, stairEdgeZ);
-      root.add(step);
-    }
-
-    // ── 잠금 철창 — 잠기면 전면을 빨간 세로봉으로 봉쇄 ──
+    // ── 잠금 철창 — 잠기면 전면을 빨간 세로봉으로 봉쇄 ──────
     const bars = new THREE.Group();
     bars.visible = false;
     root.add(bars);
     lockBarGroups.set(i, bars);
-    lockBarBuilders.set(i, (floors: number) => {
+    const rebuildBars = (floors: number) => {
       bars.clear();
       const barMat2 = lambert(0xd63031);
       const barTopMat2 = lambert(0xa61e1e);
@@ -388,43 +381,48 @@ export function buildMap(scene: THREE.Scene, ownerNames?: string[]): MapRefs {
         beam.position.set(S(PLOT_INNER_X + 0.4), by, c.z);
         bars.add(beam);
       }
-    });
-    lockBarBuilders.get(i)!(1);
+    };
+    rebuildBars(1);
+    rebuildables.get(i)!.push(() => rebuildBars(unlocked.get(i) ?? 1));
 
-    // ── 잠금 패드 (전면 유리 안쪽) ────────────────────────
+    // ── 잠금 패드 ────────────────────────────────────────────
     const pad = new THREE.Mesh(
       new THREE.CylinderGeometry(0.75, 0.9, 0.26, 14),
       lambert(0x7f8c9b),
     );
     pad.position.set(S(PLOT_INNER_X + 1.8), 0.55, c.z + (i % 2 === 0 ? 1 : -1) * 3);
     root.add(pad);
-    const padIcon = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.7, 0.12), lambert(0x2d3436));
-    padIcon.position.set(S(PLOT_INNER_X + 1.8), 0.95, c.z + (i % 2 === 0 ? 1 : -1) * 3);
-    root.add(padIcon);
 
     unlocked.set(i, 1);
   }
 
-  // ── 슬롯 위치: 층×2행×5열 ─────────────────────────────────
+  // ── 슬롯: 층×좌/우 영역 (한 영역 5슬롯 = 앞 3 + 뒤 2) ──────
   const slotCache: THREE.Vector3[][] = [];
   for (let i = 0; i < BASE_COUNT; i++) {
-    const side = baseSide(i);
     const c = baseCenter(i);
+    const S = (x: number) => baseSide(i) * x;
     const slots: THREE.Vector3[] = [];
-    for (let s = 0; s < SLOT_PER_FLOOR * 3; s++) {
-      const floor = Math.floor(s / SLOT_PER_FLOOR);
-      const k = s % SLOT_PER_FLOOR;
-      const col = k % 5;
-      const rowD = Math.floor(k / 5);
-      const x = 16.2 + floor * 5.6 + rowD * 2.8;
-      const z = c.z + (col - 2) * 3.4;
-      const y = floor * TIER_H;
-      slots.push(new THREE.Vector3(side * x, y + 0.5, z));
+    for (let f = 0; f < 3; f++) {
+      const bandStart = PLOT_INNER_X + 0.5 + f * THIRD;
+      const y = f * TIER_H + 0.5;
+      // zone offsets within band (x): 앞줄 3 / 뒷줄 2
+      const rowA = [bandStart + 1.5, bandStart + THIRD / 2, bandStart + THIRD - 1.5];
+      const rowB = [bandStart + THIRD / 2 - 1.1, bandStart + THIRD / 2 + 1.1];
+      const zoneZ = (sz: number) => c.z + sz * 3.6;
+      const rowBOff = 1.4; // 뒷줄은 중앙 통로 쪽으로 살짝 이동
+      for (const sz of [-1, 1] as const) {
+        for (const x of rowA) {
+          slots.push(new THREE.Vector3(S(x), y, zoneZ(sz)));
+        }
+        for (const x of rowB) {
+          slots.push(new THREE.Vector3(S(x), y, zoneZ(sz) - sz * rowBOff));
+        }
+      }
     }
     slotCache[i] = slots;
   }
 
-  // ── 지면 높이: 계단식 티어 ────────────────────────────────
+  // ── 지면 높이: 등분 티어 ──────────────────────────────────
   const groundHeight = (x: number, z: number): number => {
     for (let i = 0; i < BASE_COUNT; i++) {
       const c = baseCenter(i);
@@ -434,7 +432,6 @@ export function buildMap(scene: THREE.Scene, ownerNames?: string[]): MapRefs {
       if (ax < PLOT_INNER_X - 1 || ax > PLOT_OUTER_X) continue;
       if (Math.sign(x) !== side) continue;
       const floors = unlocked.get(i) ?? 1;
-      // 계단 구간 근사: 티어 경계 ±0.9에서 선형 보간 (컨트롤러가 착지 보정)
       const lerpBand = (edge: number, lower: number, upper: number) => {
         if (ax < edge - 0.9) return lower;
         if (ax > edge + 0.9) return upper;
@@ -471,36 +468,6 @@ export function buildMap(scene: THREE.Scene, ownerNames?: string[]): MapRefs {
   addFence(FIELD_X, FIELD_Z_MIN, FIELD_X, FIELD_Z_MAX);
   addFence(-8.2, CARPET_FROM_Z - 3.8, 8.2, CARPET_FROM_Z - 3.8);
 
-  // ── 가로수/가로등 ────────────────────────────────────────
-  const trunkMat = lambert(0x8a5a33);
-  const leafMat = lambert(0x2f9e44);
-  const lampMat = lambert(0x57606f);
-  const bulbMat = lambert(0xffe066);
-  let deco = 0;
-  for (let z = -36; z <= 40; z += 12.6) {
-    for (const s of [-1, 1]) {
-      const x = s * (STREET_HALF_W + 2.2);
-      if (deco % 2 === 0) {
-        const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.55, 2.6, 8), trunkMat);
-        trunk.position.set(x, 1.3, z);
-        trunk.castShadow = true;
-        scene.add(trunk);
-        const crown = new THREE.Mesh(new THREE.SphereGeometry(1.8, 10, 8), leafMat);
-        crown.position.set(x, 3.6, z);
-        crown.castShadow = true;
-        scene.add(crown);
-      } else {
-        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.18, 3.8, 6), lampMat);
-        pole.position.set(x, 1.9, z);
-        scene.add(pole);
-        const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.38, 8, 6), bulbMat);
-        bulb.position.set(x, 4, z);
-        scene.add(bulb);
-      }
-      deco++;
-    }
-  }
-
   return {
     colliders,
     groundHeight,
@@ -522,13 +489,11 @@ export function buildMap(scene: THREE.Scene, ownerNames?: string[]): MapRefs {
       const tg = tierGroups.get(baseId)!;
       tg.t2.visible = floors >= 2;
       tg.t3.visible = floors >= 3;
-      lockBarBuilders.get(baseId)?.(floors);
+      for (const rebuild of rebuildables.get(baseId) ?? []) rebuild();
     },
     setBaseLocked: (baseId, locked) => {
-      // 철창 표시/해제
       const bars = lockBarGroups.get(baseId);
       if (bars) bars.visible = locked;
-      // 유리는 보조 표시 (기물 뒤 브레인롯이 보이도록 옅게)
       const mats = glassMats.get(baseId);
       if (!mats) return;
       for (const m of mats) {
@@ -536,7 +501,7 @@ export function buildMap(scene: THREE.Scene, ownerNames?: string[]): MapRefs {
         m.opacity = locked ? 0.35 : 0.45;
       }
     },
-    setBaseInfo: (baseId, count, slots) => {
+    setBaseInfo: (baseId, count, slotsN) => {
       const info = nameSignCanvases.get(baseId);
       if (!info) return;
       const ctx = info.canvas.getContext('2d')!;
@@ -544,13 +509,14 @@ export function buildMap(scene: THREE.Scene, ownerNames?: string[]): MapRefs {
       ctx.fillStyle = '#ffd43b'; ctx.fillRect(0, 0, 256, 14);
       ctx.font = 'bold 38px sans-serif'; ctx.fillStyle = '#fff';
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(info.name, 128, 44);
+      ctx.fillText(info.name, 128, 42);
       ctx.font = 'bold 30px sans-serif';
       ctx.fillStyle = '#ffd43b';
-      ctx.fillText(`🧠 ${count}/${slots}`, 128, 78);
+      ctx.fillText(`🧠 ${count}/${slotsN}`, 128, 76);
       info.tex.needsUpdate = true;
     },
     setBaseSkin: (baseId, skin) => {
+      skinOf.set(baseId, skin);
       const targets = skinTargets.get(baseId);
       if (!targets) return;
       const pal = SKIN_PALETTE[skin];
@@ -558,12 +524,10 @@ export function buildMap(scene: THREE.Scene, ownerNames?: string[]): MapRefs {
       for (const m of targets.trimMats) m.color.setHex(pal.trim);
       if (targets.barMat) {
         targets.barMat.color.setHex(pal.bar);
-        // 레인보우 애니메이션 등록/해제
         const idx = rainbowMats.indexOf(targets.barMat);
         if (skin === 'rainbow' && idx < 0) rainbowMats.push(targets.barMat);
         if (skin !== 'rainbow' && idx >= 0) rainbowMats.splice(idx, 1);
       }
-      // 매트(스터드) 재질 교체 — 스킨별 캐시 (모든 슬랩이 같은 타일 밀도 사용)
       const key = skin;
       let mat = matMaterialCache.get(key);
       if (!mat) {
