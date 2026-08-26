@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { studMaterial } from './StudTexture';
+import { floorMaterial } from './StudTexture';
 import {
   FIELD_X, FIELD_Z_MIN, FIELD_Z_MAX, STREET_HALF_W, CARPET_HALF_W,
   CARPET_FROM_Z, CARPET_TO_Z, PLOT_INNER_X, PLOT_OUTER_X, PLOT_HALF_Z,
@@ -52,7 +52,6 @@ const BASE_TRIM = [
 const SLOT_PER_FLOOR = 10;
 const NAVY = 0x1e3a5f;        // 원작 기지 프레임 네이비
 const MAT_BEIGE = '#d8c8a8';  // 전시 매트 바닥
-const MAT_STUD = '#e6d7b8';
 const GLASS_OPEN = 0x9fd8ff;
 const GLASS_LOCKED = 0xff5252;
 
@@ -77,7 +76,7 @@ export function buildMap(scene: THREE.Scene, ownerNames?: string[]): MapRefs {
   // ── 지면: 밝은 라임 잔디 ─────────────────────────────────
   const grass = new THREE.Mesh(
     new THREE.BoxGeometry(FIELD_X * 2, 1, FIELD_Z_MAX - FIELD_Z_MIN),
-    studMaterial('#7ec850', '#8fdb5f', FIELD_X * 2, FIELD_Z_MAX - FIELD_Z_MIN),
+    floorMaterial('#5fca64', FIELD_X * 2, FIELD_Z_MAX - FIELD_Z_MIN),
   );
   grass.position.set(0, -0.5, (FIELD_Z_MAX + FIELD_Z_MIN) / 2);
   grass.receiveShadow = true;
@@ -86,7 +85,7 @@ export function buildMap(scene: THREE.Scene, ownerNames?: string[]): MapRefs {
   // ── 거리: 아스팔트 + 보도 ─────────────────────────────────
   const street = new THREE.Mesh(
     new THREE.BoxGeometry(STREET_HALF_W * 2 + 4, 0.3, FIELD_Z_MAX - FIELD_Z_MIN - 4),
-    studMaterial('#8a8f98', '#9aa0aa', STREET_HALF_W * 2 + 4, FIELD_Z_MAX - FIELD_Z_MIN - 4),
+    floorMaterial('#8a8f98', STREET_HALF_W * 2 + 4, FIELD_Z_MAX - FIELD_Z_MIN - 4, { lineDark: 0.12 }),
   );
   street.position.set(0, 0.05, (FIELD_Z_MAX + FIELD_Z_MIN) / 2);
   street.receiveShadow = true;
@@ -105,7 +104,7 @@ export function buildMap(scene: THREE.Scene, ownerNames?: string[]): MapRefs {
   // ── 레드카펫 (황금 테두리+스탠션) ─────────────────────────
   const carpet = new THREE.Mesh(
     new THREE.BoxGeometry(CARPET_HALF_W * 2, 0.36, CARPET_TO_Z - CARPET_FROM_Z + 6),
-    studMaterial('#e03131', '#f04a4a', CARPET_HALF_W * 2, CARPET_TO_Z - CARPET_FROM_Z + 6),
+    floorMaterial('#eb544c', CARPET_HALF_W * 2, CARPET_TO_Z - CARPET_FROM_Z + 6, { linePx: 2, lineDark: 0.08 }),
   );
   carpet.position.set(0, 0.24, (CARPET_TO_Z + CARPET_FROM_Z) / 2);
   carpet.receiveShadow = true;
@@ -172,7 +171,7 @@ export function buildMap(scene: THREE.Scene, ownerNames?: string[]): MapRefs {
     // ── 1층: 지면 레벨 콘크리트 판 ────────────────────────
     const slab1 = new THREE.Mesh(
       new THREE.BoxGeometry(TIER1_X - PLOT_INNER_X + 1, 0.5, PLOT_HALF_Z * 2),
-      studMaterial(MAT_BEIGE, MAT_STUD, TIER1_X - PLOT_INNER_X + 1, PLOT_HALF_Z * 2),
+      floorMaterial(MAT_BEIGE, TIER1_X - PLOT_INNER_X + 1, PLOT_HALF_Z * 2, { lineDark: 0.12 }),
     );
     slab1.position.set(S((PLOT_INNER_X + TIER1_X) / 2 - 0.5), 0.25, c.z);
     slab1.receiveShadow = true;
@@ -184,7 +183,7 @@ export function buildMap(scene: THREE.Scene, ownerNames?: string[]): MapRefs {
     t2.visible = false;
     const slab2 = new THREE.Mesh(
       new THREE.BoxGeometry(TIER2_X - TIER1_X, TIER_H + 0.5, PLOT_HALF_Z * 2),
-      studMaterial(MAT_BEIGE, MAT_STUD, TIER2_X - TIER1_X, PLOT_HALF_Z * 2),
+      floorMaterial(MAT_BEIGE, TIER2_X - TIER1_X, PLOT_HALF_Z * 2, { lineDark: 0.12 }),
     );
     slab2.position.set(S((TIER1_X + TIER2_X) / 2), (TIER_H + 0.5) / 2, c.z);
     slab2.castShadow = true;
@@ -198,7 +197,7 @@ export function buildMap(scene: THREE.Scene, ownerNames?: string[]): MapRefs {
     t3.visible = false;
     const slab3 = new THREE.Mesh(
       new THREE.BoxGeometry(PLOT_OUTER_X - TIER2_X, TIER_H * 2 + 0.5, PLOT_HALF_Z * 2),
-      studMaterial(MAT_BEIGE, MAT_STUD, PLOT_OUTER_X - TIER2_X, PLOT_HALF_Z * 2),
+      floorMaterial(MAT_BEIGE, PLOT_OUTER_X - TIER2_X, PLOT_HALF_Z * 2, { lineDark: 0.12 }),
     );
     slab3.position.set(S((TIER2_X + PLOT_OUTER_X) / 2), (TIER_H * 2 + 0.5) / 2, c.z);
     slab3.castShadow = true;
@@ -514,7 +513,7 @@ export function buildMap(scene: THREE.Scene, ownerNames?: string[]): MapRefs {
       const key = skin;
       let mat = matMaterialCache.get(key);
       if (!mat) {
-        mat = studMaterial(pal.mat[0], pal.mat[1], 10, 10);
+        mat = floorMaterial(pal.mat[0], 10, 10, { lineDark: 0.12 });
         matMaterialCache.set(key, mat);
       }
       for (const mesh of targets.matMeshes) {
