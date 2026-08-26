@@ -68,6 +68,7 @@ export class GameViews {
   private auctionDisplay: ReturnType<typeof buildBrainrotMesh> | null = null;
   readonly sfx = new Sfx();
   private saveTimer: number | null = null;
+  private lastSignText = new Map<number, string>();
   private heldTool: { group: THREE.Group; swingAt: number; removeAt: number } | null = null;
   private accum = 0;
   private lastRaidToastAt = 0;
@@ -239,6 +240,9 @@ export class GameViews {
         this.onToast(this.sfx.muted ? '🔇 소리 끔' : '🔊 소리 켬');
       }
     });
+    // 기지 간판 갱신 (이름 + 보유 수) — 1초 주기, 변경시만
+    window.setInterval(() => this.updateBaseSigns(), 1000);
+
     // 자동 저장: 10초 + 종료 시
     this.saveTimer = window.setInterval(() => {
       saveGame(this.game, { x: this.player.pos.x, z: this.player.pos.z });
@@ -260,6 +264,7 @@ export class GameViews {
     }
     this.player.teleportTo(data.playerPos.x, data.playerPos.z);
     this.applyBaseSkin('p0');
+    this.updateBaseSigns();
     this.onToast('💾 저장에서 이어서 시작!');
     return true;
   }
@@ -841,6 +846,18 @@ export class GameViews {
       swingAt: performance.now(),
       removeAt: performance.now() + 1200,
     };
+  }
+
+  private updateBaseSigns(): void {
+    for (const p of this.game.state.players) {
+      const count = this.game.state.brainrots.filter(
+        (i) => i.ownerId === p.id && i.location === 'base',
+      ).length;
+      const text = `${count}/${p.slots}`;
+      if (this.lastSignText.get(p.baseId) === text) continue;
+      this.lastSignText.set(p.baseId, text);
+      this.map.setBaseInfo(p.baseId, count, p.slots);
+    }
   }
 
   ownedCount(playerId: string): number {

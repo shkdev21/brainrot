@@ -25,6 +25,8 @@ export interface MapRefs {
   setBaseLocked: (baseId: number, locked: boolean) => void;
   /** 기지 스킨 (환생 단계별) — 레인보우는 애니메이션 대상 반환 */
   setBaseSkin: (baseId: number, skin: BaseSkin) => void;
+  /** 간판 갱신 — 이름 + 보유 수 */
+  setBaseInfo: (baseId: number, count: number, slots: number) => void;
   /** 레인보우 스킨 애니메이션용 머티리얼 (render 루프에서 HSL 순환) */
   rainbowMats: THREE.MeshLambertMaterial[];
 }
@@ -70,6 +72,9 @@ export function buildMap(scene: THREE.Scene, ownerNames?: string[]): MapRefs {
   const glassMats = new Map<number, THREE.MeshLambertMaterial[]>();
   const tierGroups = new Map<number, { t2: THREE.Group; t3: THREE.Group }>();
   const skinTargets = new Map<number, SkinTargets>();
+  const lockBarGroups = new Map<number, THREE.Group>();
+  const nameSignCanvases = new Map<number, { canvas: HTMLCanvasElement; tex: THREE.CanvasTexture; name: string }>();
+  const lockBarBuilders = new Map<number, (floors: number) => void>();
   const matMaterialCache = new Map<string, THREE.MeshLambertMaterial>();
   const rainbowMats: THREE.MeshLambertMaterial[] = [];
 
@@ -232,9 +237,11 @@ export function buildMap(scene: THREE.Scene, ownerNames?: string[]): MapRefs {
     nctx.font = 'bold 44px sans-serif'; nctx.fillStyle = '#fff';
     nctx.textAlign = 'center'; nctx.textBaseline = 'middle';
     nctx.fillText(name, 128, 58);
+    const nameTex = new THREE.CanvasTexture(nc);
+    nameSignCanvases.set(i, { canvas: nc, tex: nameTex, name });
     const nameSign = new THREE.Mesh(
       new THREE.PlaneGeometry(7.5, 2.8),
-      new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(nc) }),
+      new THREE.MeshBasicMaterial({ map: nameTex }),
     );
     // 거리 쪽에서 보이도록 방향
     const signDir = side < 0 ? 1 : -1;
@@ -355,6 +362,34 @@ export function buildMap(scene: THREE.Scene, ownerNames?: string[]): MapRefs {
       step.position.set(S(TIER2_X - 0.45 - s * 0.9), TIER_H + (TIER_H / 5) * (s + 1) / 2, stairEdgeZ);
       root.add(step);
     }
+
+    // ── 잠금 철창 — 잠기면 전면을 빨간 세로봉으로 봉쇄 ──
+    const bars = new THREE.Group();
+    bars.visible = false;
+    root.add(bars);
+    lockBarGroups.set(i, bars);
+    lockBarBuilders.set(i, (floors: number) => {
+      bars.clear();
+      const barMat2 = lambert(0xd63031);
+      const barTopMat2 = lambert(0xa61e1e);
+      const SPACING = 1.3;
+      const R = 0.11;
+      const h = floors * TIER_H + 1.4;
+      for (let bz = -PLOT_HALF_Z + 1; bz <= PLOT_HALF_Z - 1; bz += SPACING) {
+        const bar = new THREE.Mesh(new THREE.CylinderGeometry(R, R, h, 8), barMat2);
+        bar.position.set(S(PLOT_INNER_X + 0.4), h / 2, c.z + bz);
+        bars.add(bar);
+      }
+      for (const [by, bh] of [[h + 0.2, 0.45], [h * 0.55, 0.3]] as const) {
+        const beam = new THREE.Mesh(
+          new THREE.BoxGeometry(0.45, bh, PLOT_HALF_Z * 2 - 0.6),
+          barTopMat2,
+        );
+        beam.position.set(S(PLOT_INNER_X + 0.4), by, c.z);
+        bars.add(beam);
+      }
+    });
+    lockBarBuilders.get(i)!(1);
 
     // ── 잠금 패드 (전면 유리 안쪽) ────────────────────────
     const pad = new THREE.Mesh(
@@ -487,14 +522,33 @@ export function buildMap(scene: THREE.Scene, ownerNames?: string[]): MapRefs {
       const tg = tierGroups.get(baseId)!;
       tg.t2.visible = floors >= 2;
       tg.t3.visible = floors >= 3;
+      lockBarBuilders.get(baseId)?.(floors);
     },
     setBaseLocked: (baseId, locked) => {
+      // 철창 표시/해제
+      const bars = lockBarGroups.get(baseId);
+      if (bars) bars.visible = locked;
+      // 유리는 보조 표시 (기물 뒤 브레인롯이 보이도록 옅게)
       const mats = glassMats.get(baseId);
       if (!mats) return;
       for (const m of mats) {
         m.color.setHex(locked ? GLASS_LOCKED : GLASS_OPEN);
-        m.opacity = locked ? 0.75 : 0.45;
+        m.opacity = locked ? 0.35 : 0.45;
       }
+    },
+    setBaseInfo: (baseId, count, slots) => {
+      const info = nameSignCanvases.get(baseId);
+      if (!info) return;
+      const ctx = info.canvas.getContext('2d')!;
+      ctx.fillStyle = '#1e3a5f'; ctx.fillRect(0, 0, 256, 96);
+      ctx.fillStyle = '#ffd43b'; ctx.fillRect(0, 0, 256, 14);
+      ctx.font = 'bold 38px sans-serif'; ctx.fillStyle = '#fff';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(info.name, 128, 44);
+      ctx.font = 'bold 30px sans-serif';
+      ctx.fillStyle = '#ffd43b';
+      ctx.fillText(`🧠 ${count}/${slots}`, 128, 78);
+      info.tex.needsUpdate = true;
     },
     setBaseSkin: (baseId, skin) => {
       const targets = skinTargets.get(baseId);

@@ -25,7 +25,15 @@
   gap: 4px;
   min-width: 210px;
 }
-#hud .money { font-size: 26px; font-weight: 800; color: #2ecc71; text-shadow: 0 2px 0 rgba(0,0,0,.4); }
+#hud .money {
+  font-size: 36px;
+  font-weight: 900;
+  color: #ffd43b;
+  text-shadow:
+    -2px -2px 0 #1a1a1a, 2px -2px 0 #1a1a1a,
+    -2px 2px 0 #1a1a1a, 2px 2px 0 #1a1a1a,
+    0 4px 6px rgba(0,0,0,.5);
+}
 #hud .row { font-size: 13px; opacity: 0.92; }
 #hud .income { color: #f1c40f; font-weight: 700; }
 #hud .rebirth { color: #e056fd; font-weight: 700; }
