@@ -61,9 +61,12 @@ export function apply(g: Game, data: SaveData): void {
   g.state.nextSpawnAt = data.nextSpawnAt;
   g.state.nextAuctionAt = Math.max(data.nextAuctionAt, data.timeMs + 60000);
   g.state.auction = null;
-  g.state.players = data.players;
+  g.state.players = data.players.map((pl) => ({ ...pl, carrying: null }));
   g.state.bases = data.bases;
-  g.state.brainrots = data.brainrots.map((i) => ({ ...i }));
+  // 운반 중이던 브레인롯은 저장 시 소멸 (원작: 접속 종료 = 훔치기 무효)
+  g.state.brainrots = data.brainrots
+    .filter((i) => i.location !== 'carried')
+    .map((i) => ({ ...i }));
   // 오래된 저장의 위치 맵 정리 (봇은 뷰가 다시 기록)
   for (const p of g.state.players) {
     g.state.positions[p.id] = g.state.positions[p.id] ?? { x: 0, z: 0 };

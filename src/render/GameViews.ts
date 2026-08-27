@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { Game } from '../core/GameState';
 import { brainrotById } from '../data/brainrots';
 import { TOOLS } from '../data/tools';
+
+const TOOL_NAMES: Record<string, string> = Object.fromEntries(TOOLS.map((t) => [t.id, t.name]));
 import { MUTATION_BY_ID } from '../data/mutations';
 import { displayName } from '../core/names';
 import { hashStr } from '../core/rng';
@@ -69,7 +71,10 @@ export class GameViews {
   readonly sfx = new Sfx();
   private saveTimer: number | null = null;
   private lastSignText = new Map<number, string>();
-  private heldTool: { group: THREE.Group; swingAt: number; removeAt: number } | null = null;
+  private equipped: { toolId: string; group: THREE.Group } | null = null;
+  private swingAt = 0;
+  private interactHint: HTMLDivElement;
+  private hintTick = 0;
   private accum = 0;
   private lastRaidToastAt = 0;
   onToast: (msg: string) => void = () => {};
@@ -159,9 +164,6 @@ export class GameViews {
         this.applyBaseSkin(playerId);
       }
     });
-    ev.on('tool-used', ({ playerId, toolId }) => {
-      if (playerId === 'p0') this.showHeldTool(toolId);
-    });
     ev.on('auction-started', () => this.sfx.play('auction'));
     ev.on('steal-started', ({ thiefId, fromBaseId }) => {
       const base = this.game.base(fromBaseId);
@@ -180,6 +182,12 @@ export class GameViews {
       this.toasts.show(msg, kind);
     };
     this.hud = new HUD(uiRoot);
+    this.interactHint = document.createElement('div');
+    this.interactHint.style.cssText =
+      'position:fixed;bottom:92px;left:50%;transform:translateX(-50%);padding:7px 18px;' +
+      'font-size:15px;font-weight:800;color:#fff;background:rgba(20,25,35,.85);border-radius:10px;' +
+      'border:1px solid rgba(255,255,255,.2);display:none;z-index:5;';
+    uiRoot.appendChild(this.interactHint);
     new Shop(uiRoot, this.game, this.onToast);
     new RebirthPanel(uiRoot, this.game, this.onToast);
     this.auction = new AuctionManager(this.game, (seed ?? 1) * 7717);
@@ -211,12 +219,17 @@ export class GameViews {
           if (res.ok) this.onToast('🔒 기지를 잠갔습니다 (20초)');
         }
       }
-      // 도구 단축키 1~0
+      // 도구 단축키 1~0 — 장착/해제 토글 (원작식: 장착 유지)
       const idx = ['Digit1','Digit2','Digit3','Digit4','Digit5','Digit6','Digit7','Digit8','Digit9','Digit0'].indexOf(e.code);
-      if (idx >= 0 && now >= p.stunUntil && !p.carrying) {
+      if (idx >= 0 && now >= p.stunUntil) {
         const toolId = p.purchasedTools[idx];
-        if (toolId) this.usePlayerTool(toolId);
+        if (toolId) this.toggleEquip(toolId);
       }
+    });
+    // 좌클릭 — 장착한 도구 사용
+    this.gs.renderer.domElement.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      this.useEquipped();
     });
 
     // 개발용 치트(임시) — M키: $10B 충전
@@ -296,29 +309,70 @@ export class GameViews {
       targetId,
     });
     if (!res.ok && res.reason === 'on-cooldown') this.onToast('⏳ 쿨타임 중입니다');
+    if (!res.ok && res.reason === 'carrying') this.onToast('🫳 운반 중에는 도구를 쓸 수 없어요');
     if (res.ok && res.hits && res.hits.length > 0) this.onToast('💥 적중!');
   }
 
-  /** E 키 — 상황별 구매/훔치기/회수 */
+  /** 주변 상호작용 대상 탐색 (E 힌트/실행 공용) */
+  private findInteract(ppos: { x: number; z: number }): {
+    kind: 'carpet' | 'steal' | 'own' | null; uid: string | null; d: number;
+  } {
+    const g = this.game;
+    let best: { kind: 'carpet' | 'steal' | 'own' | null; uid: string | null; d: number } =
+      { kind: null, uid: null, d: Infinity };
+    for (const inst of g.state.brainrots) {
+      if (inst.location !== 'carpet' && inst.location !== 'base' && inst.location !== 'dropped') continue;
+      const view = this.brainrotViews.get(inst.uid);
+      if (!view) continue;
+      const d = dist2d(ppos, { x: view.visual.group.position.x, z: view.visual.group.position.z });
+      const limit = inst.location === 'carpet' ? 3.4 : 3.0;
+      if (d > limit || d >= best.d) continue;
+      if (inst.location === 'carpet') best = { kind: 'carpet', uid: inst.uid, d };
+      else if (inst.ownerId === 'p0') best = { kind: 'own', uid: inst.uid, d };
+      else best = { kind: 'steal', uid: inst.uid, d };
+    }
+    return best;
+  }
+
+  /** E 힌트 표시 — 근처 대상이 있을 때만 */
+  private updateInteractHint(ppos: { x: number; z: number }): void {
+    const g = this.game;
+    const p = g.player('p0')!;
+    const found = this.findInteract(ppos);
+    if (!found.kind || p.carrying) {
+      this.interactHint.style.display = 'none';
+      return;
+    }
+    const inst = found.uid ? g.instance(found.uid) : null;
+    if (!inst) {
+      this.interactHint.style.display = 'none';
+      return;
+    }
+    let text: string;
+    if (found.kind === 'carpet') {
+      const def = brainrotById.get(inst.defId)!;
+      text = `[E] 구매 — ${displayName(inst.defId)} ${formatMoney(def.price)}`;
+    } else if (found.kind === 'steal') {
+      text = `[E] 훔치기 — ${displayName(inst.defId)}`;
+    } else {
+      text = `내 브레인롯: ${displayName(inst.defId)}`;
+    }
+    this.interactHint.textContent = text;
+    this.interactHint.style.display = 'block';
+  }
+
+  /** E 키 — 상황별 구매/훔치기/회수 (항상 피드백) */
   private tryInteract(): void {
     const g = this.game;
     const p = g.player('p0')!;
     if (g.state.timeMs < p.stunUntil) return;
     const ppos = { x: this.player.pos.x, z: this.player.pos.z };
+    const found = this.findInteract(ppos);
 
-    // 1) 카펫 구매
-    let bestCarpet: { uid: string; d: number } | null = null;
-    for (const inst of g.state.brainrots) {
-      if (inst.location !== 'carpet') continue;
-      const view = this.brainrotViews.get(inst.uid);
-      if (!view) continue;
-      const d = dist2d(ppos, { x: view.visual.group.position.x, z: view.visual.group.position.z });
-      if (d < 3.2 && (!bestCarpet || d < bestCarpet.d)) bestCarpet = { uid: inst.uid, d };
-    }
-    if (bestCarpet) {
-      const res = g.buy('p0', bestCarpet.uid);
+    if (found.kind === 'carpet' && found.uid) {
+      const res = g.buy('p0', found.uid);
       if (res.ok) {
-        const inst = g.instance(bestCarpet.uid)!;
+        const inst = g.instance(found.uid)!;
         this.onToast(`🛒 ${displayName(inst.defId)} 구매!`);
       } else if (res.reason === 'not-enough-money') {
         this.onToast('💸 돈이 부족해요');
@@ -328,25 +382,29 @@ export class GameViews {
       return;
     }
 
-    // 2) 훔치기/회수 (타 기지 or 드롭)
-    let bestSteal: { uid: string; d: number } | null = null;
-    for (const inst of g.state.brainrots) {
-      if (inst.location !== 'base' && inst.location !== 'dropped') continue;
-      if (inst.location === 'base' && inst.ownerId === 'p0') continue;
-      const view = this.brainrotViews.get(inst.uid);
-      if (!view) continue;
-      const d = dist2d(ppos, { x: view.visual.group.position.x, z: view.visual.group.position.z });
-      if (d < 2.8 && (!bestSteal || d < bestSteal.d)) bestSteal = { uid: inst.uid, d };
-    }
-    if (bestSteal && !p.carrying) {
-      const res = tryPickUp(g, 'p0', bestSteal.uid);
+    if (found.kind === 'steal' && found.uid) {
+      if (p.carrying) {
+        this.onToast('🫳 이미 들고 있어요 — 내 기지로 가져가세요!');
+        return;
+      }
+      const res = tryPickUp(g, 'p0', found.uid);
       if (res.ok) {
-        const inst = g.instance(bestSteal.uid)!;
+        const inst = g.instance(found.uid)!;
         this.onToast(`🥷 ${displayName(inst.defId)} 훔쳤다! 기지로 도망쳐!`);
       } else if (res.reason === 'base-locked') {
         this.onToast('🔒 잠긴 기지입니다');
+      } else if (res.reason === 'stunned') {
+        this.onToast('😵 기절 상태에요');
       }
+      return;
     }
+
+    if (found.kind === 'own') {
+      this.onToast('📦 내 브레인롯이에요 — 남의 기지 것을 훔쳐보세요!');
+      return;
+    }
+
+    this.onToast('🔍 주변에 브레인롯이 없어요 — 카펫이나 타 기지로 가보세요');
   }
 
   // ── 이벤트 핸들러 ────────────────────────────────────────
@@ -769,20 +827,18 @@ export class GameViews {
       }
     }
 
-    // 손에 든 도구 스윙 애니메이션
-    if (this.heldTool) {
-      const elapsed = performance.now() - this.heldTool.swingAt;
-      if (elapsed < 350) {
-        // 0.35초 스윙: 뒤로 → 앞으로
-        const t2 = elapsed / 350;
-        this.heldTool.group.rotation.x = -0.4 + Math.sin(t2 * Math.PI) * -1.6;
-      } else {
-        this.heldTool.group.rotation.x = -0.4;
-      }
-      if (performance.now() >= this.heldTool.removeAt) {
-        this.player.mesh.remove(this.heldTool.group);
-        this.heldTool = null;
-      }
+    // 장착 도구 스윙 애니메이션 (장착은 유지)
+    if (this.equipped) {
+      const elapsed = performance.now() - this.swingAt;
+      this.equipped.group.rotation.x =
+        elapsed < 350 ? -0.4 + Math.sin((elapsed / 350) * Math.PI) * -1.6 : -0.4;
+    }
+
+    // 상호작용 힌트 (0.15초 주기 갱신)
+    this.hintTick += dt * 1000;
+    if (this.hintTick > 150) {
+      this.hintTick = 0;
+      this.updateInteractHint(ppos);
     }
 
     // 레인보우 스킨 트림 색 순환
@@ -832,20 +888,29 @@ export class GameViews {
     this.map.setBaseSkin(p.baseId, skin);
   }
 
-  /** 도구 사용 — 손에 들고 스윙 */
-  private showHeldTool(toolId: string): void {
+  /** 도구 장착 토글 — 같은 키 다시 누르면 해제 */
+  private toggleEquip(toolId: string): void {
+    if (this.equipped?.toolId === toolId) {
+      this.player.mesh.remove(this.equipped.group);
+      this.equipped = null;
+      this.onToast(`🔻 ${TOOL_NAMES[toolId] ?? toolId} 해제`);
+      return;
+    }
+    if (this.equipped) this.player.mesh.remove(this.equipped.group);
     const mesh = buildToolMesh(toolId);
     if (!mesh) return;
-    if (this.heldTool) this.player.mesh.remove(this.heldTool.group);
-    // 오른손 위치 (아바타 로컬 좌표)
     mesh.position.set(0.55, 1.25, 0.25);
     mesh.rotation.set(-0.4, 0, -0.15);
     this.player.mesh.add(mesh);
-    this.heldTool = {
-      group: mesh,
-      swingAt: performance.now(),
-      removeAt: performance.now() + 1200,
-    };
+    this.equipped = { toolId, group: mesh };
+    this.onToast(`🔨 ${TOOL_NAMES[toolId] ?? toolId} 장착 — 좌클릭으로 사용`);
+  }
+
+  /** 장착 도구 사용 (좌클릭) */
+  private useEquipped(): void {
+    if (!this.equipped) return;
+    this.usePlayerTool(this.equipped.toolId);
+    this.swingAt = performance.now();
   }
 
   private updateBaseSigns(): void {

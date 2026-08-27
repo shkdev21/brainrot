@@ -32,7 +32,8 @@ export class HUD {
       <div id="toolbar" class="panel"></div>
       <div id="hints">
         <b>이동</b> WASD/방향키 · <b>점프</b> Space · <b>구매/훔치기</b> E<br>
-        <b>기지 잠금</b> F (패드 위) · <b>상점</b> B · <b>환생</b> R · <b>도구</b> 1~0
+        <b>기지 잠금</b> F (패드 위) · <b>상점</b> B · <b>환생</b> R<br>
+        <b>도구 장착</b> 1~0 · <b>도구 사용</b> 좌클릭
       </div>
     `);
     this.moneyEl = parent.querySelector('#hud .money')!;
