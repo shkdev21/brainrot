@@ -231,6 +231,13 @@ export class GameViews {
         const toolId = p.purchasedTools[idx];
         if (toolId) this.toggleEquip(toolId);
       }
+      // Q — 장착 도구 휘두르기 (미장착이면 첫 도구 자동 장착)
+      if (e.code === 'KeyQ' && !e.repeat && now >= p.stunUntil) {
+        if (!this.equipped && p.purchasedTools.length > 0) {
+          this.toggleEquip(p.purchasedTools[0]);
+        }
+        this.useEquipped();
+      }
     });
     // 좌클릭 — 장착한 도구 사용
     this.gs.renderer.domElement.addEventListener('mousedown', (e) => {
