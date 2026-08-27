@@ -34,7 +34,7 @@ export class Game {
 
   constructor(opts: GameOptions = {}) {
     this.rng = makeRng(opts.seed ?? Date.now() % 2147483647);
-    const startingMoney = opts.startingMoney ?? 100;
+    const startingMoney = opts.startingMoney ?? 500;
 
     const personas: Persona[] = opts.botPersonas ?? [
       'raider', 'raider', 'raider', 'guardian', 'guardian', 'farmer', 'farmer',
@@ -90,11 +90,12 @@ export class Game {
       positions: {},
     };
 
-    // 첫 스폰 타이머: 커먼은 즉시 하나
-    for (const rarity of Object.keys(SPAWN_TIMING_RARITIES)) {
+    // 첫 스폰 타이머: 커먼은 즉시 하나 (튜토리얼용 최저가 고정)
+    for (const rarity of SPAWN_TIMING_RARITIES) {
       this.state.nextSpawnAt[rarity] = nextSpawnDelayMs(this.rng, rarity);
     }
     this.state.nextSpawnAt['common'] = 500;
+    this.firstSpawnTutorial = true;
   }
 
   player(id: string): PlayerState | undefined {
@@ -145,10 +146,18 @@ export class Game {
     }
   }
 
+  private firstSpawnTutorial = false;
+
   spawnOnCarpet(rarity: string): BrainrotInstance | null {
-    const pool = brainrots.filter((b) => b.rarity === rarity && !b.auctionOnly);
+    let pool = brainrots.filter((b) => b.rarity === rarity && !b.auctionOnly);
     if (pool.length === 0) return null;
-    const def = pick(this.rng, pool);
+    let def;
+    if (this.firstSpawnTutorial && rarity === 'common') {
+      def = brainrotById.get('noobini') ?? pool[0];
+      this.firstSpawnTutorial = false;
+    } else {
+      def = pick(this.rng, pool);
+    }
     const mutRoll = weightedPick(this.rng, NATURAL_MUTATION_WEIGHTS);
     const inst: BrainrotInstance = {
       uid: this.uid('r'),

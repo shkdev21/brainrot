@@ -11,6 +11,8 @@ import {
 
 export interface Seg {
   x1: number; z1: number; x2: number; z2: number;
+  /** 동적 제거용 마커 (차단벽 등) */
+  tag?: string;
 }
 
 export interface MapRefs {
@@ -375,37 +377,22 @@ export function buildMap(scene: THREE.Scene, ownerNames?: string[]): MapRefs {
       for (const ch of [...root.children]) {
         if (ch.name === 'blocker') root.remove(ch);
       }
-      // 기존 차단 collider 제거
       for (let ci = colliders.length - 1; ci >= 0; ci--) {
-        if (colliders[ci].x1 === S(SHOW_X1 + 2.2) && colliders[ci].z1 === c.z - PLOT_HALF_Z) {
-          colliders.splice(ci, 1);
-        }
-        if (colliders[ci].x1 === S(LV2_X1 + 2.2) && colliders[ci].z1 === c.z - PLOT_HALF_Z) {
-          colliders.splice(ci, 1);
-        }
+        if (colliders[ci].tag === `blocker${i}`) colliders.splice(ci, 1);
       }
       const floors = unlocked.get(i) ?? 1;
-      if (floors < 2) {
-        const bx = S(SHOW_X1 + 2.2);
+      const addBlocker = (bx: number, h: number, y: number) => {
         const b = new THREE.Mesh(
-          new THREE.BoxGeometry(WALL_T, FLOOR_H * 3, PLOT_HALF_Z * 2 - WALL_T),
+          new THREE.BoxGeometry(WALL_T, h, PLOT_HALF_Z * 2 - WALL_T),
           lambert(pal().frame),
         );
         b.name = 'blocker';
-        b.position.set(bx, FLOOR_H * 1.5, c.z);
+        b.position.set(bx, y, c.z);
         root.add(b);
-        colliders.push({ x1: bx, z1: c.z - PLOT_HALF_Z, x2: bx, z2: c.z + PLOT_HALF_Z });
-      } else if (floors < 3) {
-        const bx = S(LV2_X1 + 2.2);
-        const b = new THREE.Mesh(
-          new THREE.BoxGeometry(WALL_T, FLOOR_H * 2, PLOT_HALF_Z * 2 - WALL_T),
-          lambert(pal().frame),
-        );
-        b.name = 'blocker';
-        b.position.set(bx, FLOOR_H * 2, c.z);
-        root.add(b);
-        colliders.push({ x1: bx, z1: c.z - PLOT_HALF_Z, x2: bx, z2: c.z + PLOT_HALF_Z });
-      }
+        colliders.push({ x1: bx, z1: c.z - PLOT_HALF_Z, x2: bx, z2: c.z + PLOT_HALF_Z, tag: `blocker${i}` });
+      };
+      if (floors < 2) addBlocker(S(SHOW_X1 + 2.2), FLOOR_H * 3, FLOOR_H * 1.5);
+      else if (floors < 3) addBlocker(S(LV2_X1 + 2.2), FLOOR_H * 2, FLOOR_H * 2);
     };
     rebuildBlockers();
     rebuildables.get(i)!.push(rebuildBlockers);

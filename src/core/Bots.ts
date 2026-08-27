@@ -211,7 +211,8 @@ export class BotBrain {
     for (const inst of g.state.brainrots) {
       if (inst.location !== 'carpet') continue;
       const def = brainrotById.get(inst.defId);
-      if (!def || def.price > me.money) continue;
+      // 플레이어에게 기회를 — 봇은 여유 자금의 2배가 있어야만 구매
+      if (!def || def.price * 2 > me.money) continue;
       const income = instanceIncome(inst);
       if (income > bestIncome) {
         bestIncome = income;

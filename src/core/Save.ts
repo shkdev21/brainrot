@@ -5,6 +5,8 @@ import type { PlayerState, BaseState, BrainrotInstance } from './types';
 
 const KEY = 'steal-a-brainrot-save';
 const VERSION = 1;
+/** resetSave 호출 후 beforeunload 재저장 방지 */
+let saveArmed = true;
 
 export interface SaveData {
   version: number;
@@ -20,6 +22,7 @@ export interface SaveData {
 }
 
 export function save(g: Game, playerPos: { x: number; z: number }): void {
+  if (!saveArmed) return;
   try {
     const data: SaveData = {
       version: VERSION,
@@ -74,6 +77,7 @@ export function apply(g: Game, data: SaveData): void {
 }
 
 export function resetSave(): void {
+  saveArmed = false;
   try {
     localStorage.removeItem(KEY);
   } catch {

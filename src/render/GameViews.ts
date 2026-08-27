@@ -12,7 +12,7 @@ import { tryPickUp, arriveOwnBase, droppedPositions } from '../core/Carry';
 import { lockBase, canEnterBase } from '../core/BaseLock';
 import { useTool, purchaseTool } from '../core/ToolEffects';
 import { BotBrain, type BotIntent } from '../core/Bots';
-import { baseCenter, baseFront, inBaseZone, inCarpetZone, dist2d, CARPET_WALK_MS } from '../core/Layout';
+import { baseCenter, baseFront, inBaseZone, inCarpetZone, dist2d, CARPET_WALK_MS, CARPET_FROM_Z } from '../core/Layout';
 import { GameScene } from './Scene';
 import type { MapRefs } from './MapBuilder';
 import { resolveCollisions } from './MapBuilder';
@@ -79,6 +79,8 @@ export class GameViews {
   private lastFullWarnAt = 0;
   private interactHint: HTMLDivElement;
   private hintTick = 0;
+  private objectiveEl: HTMLDivElement;
+  private objectiveStep = 0;
   private lastRaidToastAt = 0;
   onToast: (msg: string) => void = () => {};
 
@@ -94,9 +96,9 @@ export class GameViews {
       gs.camera, gs.renderer.domElement, map.colliders, map.groundHeight, 0x74b9ff,
     );
     const door0 = map.doorCenter(0);
-    // 서쪽(기지0) 문에서 거리 쪽으로 2.5m
+    // 자기 기지 문 앞 보도에서 북쪽 카펫 게이트를 바라봄
     this.player.teleportTo(door0.x + 2.5, door0.z);
-    this.player.camYaw = -Math.PI / 2; // 거리(동쪽)를 바라봄
+    this.player.camYaw = Math.atan2(0 - (door0.x + 2.5), (CARPET_FROM_Z + 6) - door0.z);
     gs.scene.add(this.player.mesh);
 
     // 봇 아바타 — 전면 전시장(차단벽 앞쪽)에 스폰
@@ -188,6 +190,14 @@ export class GameViews {
       this.toasts.show(msg, kind);
     };
     this.hud = new HUD(uiRoot);
+    // 목표 안내 배너 (첫 플레이 온보딩)
+    this.objectiveEl = document.createElement('div');
+    this.objectiveEl.style.cssText =
+      'position:fixed;top:14px;left:50%;transform:translateX(-50%);padding:9px 22px;' +
+      'font-size:16px;font-weight:800;color:#ffd43b;background:rgba(20,25,35,.88);' +
+      'border:2px solid rgba(255,211,59,.5);border-radius:12px;display:none;z-index:6;';
+    uiRoot.appendChild(this.objectiveEl);
+    this.initObjectives();
     this.interactHint = document.createElement('div');
     this.interactHint.style.cssText =
       'position:fixed;bottom:92px;left:50%;transform:translateX(-50%);padding:7px 18px;' +
@@ -283,12 +293,34 @@ export class GameViews {
     const data = loadGame();
     if (!data) return false;
     applySave(this.game, data);
-    // 층 잠금 비주얼 반영
+    // 중간부터 이어하는 세이브면 온보딩 목표 미표시
+    if (this.game.player('p0')!.rebirth > 0 || this.ownedCount('p0') > 0) {
+      this.objectiveStep = 99;
+      this.objectiveEl.style.display = 'none';
+    }
+    this.player.teleportTo(data.playerPos.x, data.playerPos.z);
+    // 저장된 브레인롯 3D 뷰 재구축 (이벤트가 없어 뷰가 없던 문제)
+    for (const inst of this.game.state.brainrots) {
+      if (inst.location === 'carried') continue;
+      let pos: THREE.Vector3;
+      let carpetStart: number | null = null;
+      if (inst.slot) {
+        pos = this.map.slotPos(inst.slot.baseId, this.floorSlotIndex(inst));
+        pos = pos.clone();
+        pos.y = (inst.slot.floor - 1) * 4 + 0.5;
+      } else if (inst.location === 'carpet') {
+        pos = this.map.carpetStart.clone();
+        carpetStart = this.game.state.timeMs;
+      } else {
+        pos = new THREE.Vector3(0, 0, 0); // dropped — 거리 중앙
+      }
+      this.spawnView(inst.uid, pos, carpetStart);
+      if (inst.location === 'base') this.snapToSlot(inst.uid);
+    }
     for (const base of this.game.state.bases) {
       this.map.setFloors(base.id, base.unlockedFloors);
       this.map.setBaseLocked(base.id, this.game.state.timeMs < base.lockedUntil);
     }
-    this.player.teleportTo(data.playerPos.x, data.playerPos.z);
     this.applyBaseSkin('p0');
     this.updateBaseSigns();
     this.onToast('💾 저장에서 이어서 시작!');
@@ -425,14 +457,27 @@ export class GameViews {
   private onSpawned(uid: string): void {
     const inst = this.game.instance(uid);
     if (!inst) return;
-    const def = brainrotById.get(inst.defId)!;
-    const visual = buildBrainrotMesh(def.id, def.rarity, inst.mutation);
     // 카펫 북쪽 출입구에서 등장 — 좌우 지터로 겹침 방지
     const jitter = ((hashStr(uid) % 100) / 100 - 0.5) * 3.6;
     const start = this.map.carpetStart.clone();
     start.x += jitter;
-    visual.group.position.copy(start);
-    visual.group.rotation.y = Math.PI; // 남쪽(+z)으로 걸으므로 반대 방향 정면
+    this.spawnView(uid, start, this.game.state.timeMs, jitter);
+  }
+
+  /** 브레인롯 3D 뷰 생성 (스폰/저장 복원 공용) */
+  private spawnView(
+    uid: string,
+    at: THREE.Vector3,
+    carpetStartAt: number | null,
+    jitter = 0,
+  ): void {
+    if (this.brainrotViews.has(uid)) return;
+    const inst = this.game.instance(uid);
+    if (!inst) return;
+    const def = brainrotById.get(inst.defId)!;
+    const visual = buildBrainrotMesh(def.id, def.rarity, inst.mutation);
+    visual.group.position.copy(at);
+    visual.group.rotation.y = Math.PI;
     this.gs.scene.add(visual.group);
 
     const view: BrainrotView = {
@@ -440,10 +485,10 @@ export class GameViews {
       label: this.makeLabel(inst.defId, def.rarity, inst.mutation),
       coin: new THREE.Mesh(this.coinGeo, this.coinMat),
       walk: null,
-      carpetStartAt: this.game.state.timeMs,
+      carpetStartAt,
       carpetJitter: jitter,
     };
-    view.label.position.set(start.x, 2.6 * visual.group.scale.x + 0.8, start.z);
+    view.label.position.set(at.x, 2.6 * visual.group.scale.x + 0.8, at.z);
     view.coin.visible = false;
     this.gs.scene.add(view.label);
     this.gs.scene.add(view.coin);
@@ -619,6 +664,7 @@ export class GameViews {
       this.updateBots();
       this.updateBotMovement(STEP / 1000);
       this.syncPositions();
+      this.tryPlayerTransfer();
     }, 50);
     // 렌더/카메라 — rAF
     this.gs.onFrame((dt) => {
@@ -801,15 +847,6 @@ export class GameViews {
       this.player.pos.z += (dz / len) * 12 * dt;
     }
 
-    // 운반 중이면 내 기지 도착 즉시 이전
-    if (p0.carrying && inBaseZone(ppos, p0.baseId, 0)) {
-      const r = arriveOwnBase(g, 'p0');
-      if (r.ok) this.onToast('✅ 훔친 브레인롯을 내 것으로 만들었다!');
-      else if (r.reason === 'base-full' && g.state.timeMs - this.lastFullWarnAt > 3000) {
-        this.lastFullWarnAt = g.state.timeMs;
-        this.onToast('📦 기지 슬롯이 가득 찼어요! 환생(R)하거나 정리하세요');
-      }
-    }
 
     // 브레인롯 뷰 갱신
     for (const view of this.brainrotViews.values()) {
@@ -977,6 +1014,61 @@ export class GameViews {
     if (!this.equipped) return;
     this.usePlayerTool(this.equipped.toolId);
     this.swingAt = performance.now();
+  }
+
+  /** 첫 플레이 목표 시퀀스 — 진행 상황에 따라 다음 목표 표시 */
+  private initObjectives(): void {
+    const p = this.game.player('p0')!;
+    const alreadyPlaying = p.rebirth > 0;
+    if (alreadyPlaying) return;
+    const steps = [
+      '🛒 레드카펫에서 첫 브레인롯을 사 보세요 [E]',
+      '🏏 상점[B]에서 방망이를 사서 장착하세요 [1] [Q]',
+      '🥷 봇 기지에서 브레인롯을 훔쳐보세요 [E]',
+      '🔒 잠금 패드 위에서 [F]로 기지를 지세요',
+      '♻️ 환생[R] 조건을 채워 성장하세요!',
+    ];
+    const show = () => {
+      this.objectiveEl.textContent = steps[this.objectiveStep];
+      this.objectiveEl.style.display = 'block';
+    };
+    const next = () => {
+      this.objectiveStep++;
+      if (this.objectiveStep < steps.length) show();
+      else this.objectiveEl.style.display = 'none';
+    };
+    show();
+    this.game.events.on('purchased', ({ buyerId }) => {
+      if (buyerId === 'p0' && this.objectiveStep === 0) next();
+    });
+    // 방망이 구매 감지: tool-used가 더 간단 (장착/사용과 별개로 구매는 purchasedTools 변경) — 폴링
+    const poll = window.setInterval(() => {
+      if (this.objectiveStep === 1 && p.purchasedTools.includes('bat')) next();
+      if (this.objectiveStep >= steps.length) window.clearInterval(poll);
+    }, 500);
+    this.game.events.on('steal-started', ({ thiefId }) => {
+      if (thiefId === 'p0' && this.objectiveStep === 2) next();
+    });
+    this.game.events.on('locked', ({ ownerId }) => {
+      if (ownerId === 'p0' && this.objectiveStep === 3) next();
+    });
+    this.game.events.on('rebirth-done', ({ playerId }) => {
+      if (playerId === 'p0' && this.objectiveStep === 4) next();
+    });
+  }
+
+  /** 운반 중인 브레인롯의 내 기지 도착 → 소유권 이전 (시뮬 틱에서 호출) */
+  private tryPlayerTransfer(): void {
+    const p0 = this.game.player('p0');
+    if (!p0?.carrying) return;
+    const ppos = this.game.state.positions.p0;
+    if (!ppos || !inBaseZone(ppos, p0.baseId, 0)) return;
+    const r = arriveOwnBase(this.game, 'p0');
+    if (r.ok) this.onToast('✅ 훔친 브레인롯을 내 것으로 만들었다!');
+    else if (r.reason === 'base-full' && this.game.state.timeMs - this.lastFullWarnAt > 3000) {
+      this.lastFullWarnAt = this.game.state.timeMs;
+      this.onToast('📦 기지 슬롯이 가득 찼어요! 환생(R)하거나 정리하세요');
+    }
   }
 
   private updateBaseSigns(): void {
