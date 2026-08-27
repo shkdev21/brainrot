@@ -4,7 +4,7 @@ import { brainrotById } from '../data/brainrots';
 import { TOOL_BY_ID } from '../data/tools';
 import { makeRng, type Rng } from './rng';
 import { canEnterBase, isBaseLocked } from './BaseLock';
-import { baseCenter, dist2d, inBaseZone, type P2 } from './Layout';
+import { baseFront, dist2d, inBaseZone, type P2 } from './Layout';
 import { instanceIncome } from './Economy';
 
 // 봇 AI — 성격 3종(farmer/raider/guardian) × 스킬 파라미터.
@@ -65,7 +65,7 @@ export class BotBrain {
     if (!pos) return { moveTo: null };
     if (g.state.timeMs < me.stunUntil) return { moveTo: null };
 
-    const home = baseCenter(me.baseId);
+    const home = baseFront(me.baseId); // 전면 전시장 (차단벽 뒤 아님)
 
     // 침입자 탐지 (은신 중이면 보이지 않음)
     const intruders = g.state.players.filter((o) => {
@@ -166,7 +166,7 @@ export class BotBrain {
       if (!canEnterBase(g, me.id, other.baseId)) continue;
       const targetBase = other.baseId;
       if (isBaseLocked(g, targetBase)) continue;
-      const center = baseCenter(targetBase);
+      const center = baseFront(targetBase); // 전시장 전면으로 접근
       const d = dist2d(pos, center);
       if (d < 4) {
         // 도착 — 가장 가치 있는 것 픽업
@@ -191,7 +191,7 @@ export class BotBrain {
       return this.thinkFarmer(g, me, pos);
     }
 
-    intent.moveTo = baseCenter(best.baseId);
+    intent.moveTo = baseFront(best.baseId);
     return intent;
   }
 

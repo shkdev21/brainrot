@@ -12,7 +12,7 @@ import { tryPickUp, arriveOwnBase, droppedPositions } from '../core/Carry';
 import { lockBase, canEnterBase } from '../core/BaseLock';
 import { useTool, purchaseTool } from '../core/ToolEffects';
 import { BotBrain, type BotIntent } from '../core/Bots';
-import { baseCenter, inBaseZone, inCarpetZone, dist2d, CARPET_WALK_MS } from '../core/Layout';
+import { baseCenter, baseFront, inBaseZone, inCarpetZone, dist2d, CARPET_WALK_MS } from '../core/Layout';
 import { GameScene } from './Scene';
 import type { MapRefs } from './MapBuilder';
 import { resolveCollisions } from './MapBuilder';
@@ -52,6 +52,9 @@ interface BotView {
   pos: THREE.Vector3;
   brain: BotBrain;
   target: { x: number; z: number } | null;
+  /** 문 경유 경로 큐 — 순서대로 밟고 소진 후 target으로 직행 */
+  path: { x: number; z: number }[];
+  pathFor: { x: number; z: number } | null;
 }
 
 export class GameViews {
@@ -73,9 +76,9 @@ export class GameViews {
   private lastSignText = new Map<number, string>();
   private equipped: { toolId: string; group: THREE.Group } | null = null;
   private swingAt = 0;
+  private lastFullWarnAt = 0;
   private interactHint: HTMLDivElement;
   private hintTick = 0;
-  private accum = 0;
   private lastRaidToastAt = 0;
   onToast: (msg: string) => void = () => {};
 
@@ -96,19 +99,22 @@ export class GameViews {
     this.player.camYaw = -Math.PI / 2; // 거리(동쪽)를 바라봄
     gs.scene.add(this.player.mesh);
 
-    // 봇 아바타
+    // 봇 아바타 — 전면 전시장(차단벽 앞쪽)에 스폰
     for (let i = 1; i < 8; i++) {
       const id = `b${i}`;
       const c = baseCenter(i);
+      const sx = Math.sign(c.x) * 17; // 전시장 중앙 (blocker ±23.7보다 앞)
       const mesh = buildAvatar(BOT_COLORS[(i - 1) % BOT_COLORS.length]);
-      mesh.position.set(c.x, 0, c.z);
+      mesh.position.set(sx, 0, c.z);
       gs.scene.add(mesh);
       this.botViews.push({
-        id, mesh, pos: new THREE.Vector3(c.x, 0, c.z),
+        id, mesh, pos: new THREE.Vector3(sx, 0, c.z),
         brain: new BotBrain(id, (seed ?? 1) * 131 + i * 977),
         target: null,
+        path: [],
+        pathFor: null,
       });
-      this.game.state.positions[id] = { x: c.x, z: c.z };
+      this.game.state.positions[id] = { x: sx, z: c.z };
     }
     this.game.state.positions.p0 = { x: door0.x, z: door0.z };
 
@@ -598,19 +604,17 @@ export class GameViews {
   // ── 메인 루프 ────────────────────────────────────────────
 
   start(): void {
-    this.gs.onFrame((dt) => {
-      // 고정 스텝 코어 틱
-      this.accum += dt * 1000;
+    // 시뮬레이션(코어 틱+봇) — rAF와 무관하게 상시 진행 (탭 비활성화에도 동작)
+    window.setInterval(() => {
       const STEP = 50;
-      let steps = 0;
-      while (this.accum >= STEP && steps < 6) {
-        this.accum -= STEP;
-        steps++;
-        this.game.tick(STEP);
-        this.auction.update();
-        this.updateBots();
-        this.syncPositions();
-      }
+      this.game.tick(STEP);
+      this.auction.update();
+      this.updateBots();
+      this.updateBotMovement(STEP / 1000);
+      this.syncPositions();
+    }, 50);
+    // 렌더/카메라 — rAF
+    this.gs.onFrame((dt) => {
       this.updateRender(dt);
     });
   }
@@ -652,7 +656,7 @@ export class GameViews {
         tryPickUp(g, bv.id, target.uid);
       }
     }
-    if (intent.lockBase && dist2d(myPos, baseCenter(me.baseId)) < 6) {
+    if (intent.lockBase && inBaseZone(myPos, me.baseId)) {
       lockBase(g, bv.id);
     }
     if (intent.useTool && !me.carrying) {
@@ -670,20 +674,61 @@ export class GameViews {
       useTool(g, bv.id, toolId, { aimDir: aim, pos: myPos, targetId });
     }
 
-    // 이동
+    // 이동 — 존이 바뀌는 목적지는 문 경유 큐 생성
     if (intent.moveTo && g.state.timeMs >= me.stunUntil) {
       bv.target = intent.moveTo;
+      this.ensurePath(bv, intent.moveTo);
     }
     if (me.carrying) {
-      // 귀환 — 도착 시 소유권 이전
-      const home = baseCenter(me.baseId);
-      if (dist2d(myPos, home) < 5) {
+      // 귀환 — 기지 존(전시장) 진입 시 소유권 이전
+      if (inBaseZone(myPos, me.baseId)) {
         if (arriveOwnBase(g, bv.id).ok) {
           bv.brain.notifyRaidEnded(g);
           this.onToast(`😱 ${me.name}가 우리 것을 훔쳐갔어요!`);
         }
       }
     }
+  }
+
+  private zoneOf(pos: { x: number; z: number }): number {
+    for (let i = 0; i < 8; i++) {
+      if (inBaseZone(pos, i, 0.5)) return i;
+    }
+    return -1;
+  }
+
+  /** 존 밖 대기 지점 — 기지 문 바깥 보도 */
+  private outsidePoint(zone: number): { x: number; z: number } {
+    const door = this.map.doorCenter(zone);
+    return { x: door.x + (door.x > 0 ? 4 : -4), z: door.z };
+  }
+
+  /** 목적지 변경 시 경로 큐: 문 밖 → 보도 → 도착 문 밖 (벽 우회) */
+  private ensurePath(bv: BotView, goal: { x: number; z: number }): void {
+    if (
+      bv.pathFor &&
+      Math.hypot(bv.pathFor.x - goal.x, bv.pathFor.z - goal.z) < 2
+    ) return; // 목적지 동일 — 경로 유지
+
+    const fromZone = this.zoneOf({ x: bv.pos.x, z: bv.pos.z });
+    const toZone = this.zoneOf(goal);
+    bv.pathFor = { ...goal };
+    if (fromZone === toZone) {
+      bv.path = [];
+      return;
+    }
+    const q: { x: number; z: number }[] = [];
+    if (fromZone >= 0) {
+      q.push(this.outsidePoint(fromZone));
+      const d = this.map.doorCenter(fromZone);
+      q.push({ x: Math.sign(d.x) * 11, z: d.z }); // 보도 진입
+    }
+    if (toZone >= 0) {
+      const d = this.map.doorCenter(toZone);
+      q.push({ x: Math.sign(d.x) * 11, z: d.z }); // 보도 이동
+      q.push(this.outsidePoint(toZone));
+    }
+    bv.path = q;
   }
 
   private updateBotMovement(dt: number): void {
@@ -694,9 +739,15 @@ export class GameViews {
         continue;
       }
       bv.mesh.rotation.x = 0;
-      if (bv.target) {
-        const dx = bv.target.x - bv.pos.x;
-        const dz = bv.target.z - bv.pos.z;
+      // 경로 큐 소진 → 목적지
+      if (bv.path.length > 0) {
+        const wp = bv.path[0];
+        if (Math.hypot(bv.pos.x - wp.x, bv.pos.z - wp.z) < 2) bv.path.shift();
+      }
+      const goal = bv.path.length > 0 ? bv.path[0] : bv.target;
+      if (goal) {
+        const dx = goal.x - bv.pos.x;
+        const dz = goal.z - bv.pos.z;
         const len = Math.hypot(dx, dz);
         if (len > 0.5) {
           const speed = 5.2 * (this.game.state.timeMs < me.slowUntil ? 0.55 : 1);
@@ -706,6 +757,14 @@ export class GameViews {
         }
       }
       resolveCollisions(bv.pos, 0.6, this.map.colliders);
+      // 차단벽 뒤(타워 지역)에 갇힌 봇 구제 — 전시장으로 복귀
+      if (Math.abs(bv.pos.x) > 23.5) {
+        const me2 = this.game.player(bv.id)!;
+        const front = baseFront(me2.baseId);
+        bv.pos.set(front.x, 0, front.z);
+        bv.path = [];
+        bv.pathFor = null;
+      }
       bv.pos.y = this.map.groundHeight(bv.pos.x, bv.pos.z);
       bv.mesh.position.copy(bv.pos);
     }
@@ -739,12 +798,11 @@ export class GameViews {
     if (p0.carrying && inBaseZone(ppos, p0.baseId, 0)) {
       const r = arriveOwnBase(g, 'p0');
       if (r.ok) this.onToast('✅ 훔친 브레인롯을 내 것으로 만들었다!');
-      else if (r.reason === 'base-full') {
-        // 계속 들고 있음 — 안내만
+      else if (r.reason === 'base-full' && g.state.timeMs - this.lastFullWarnAt > 3000) {
+        this.lastFullWarnAt = g.state.timeMs;
+        this.onToast('📦 기지 슬롯이 가득 찼어요! 환생(R)하거나 정리하세요');
       }
     }
-
-    this.updateBotMovement(dt);
 
     // 브레인롯 뷰 갱신
     for (const view of this.brainrotViews.values()) {
@@ -830,8 +888,9 @@ export class GameViews {
     // 장착 도구 스윙 애니메이션 (장착은 유지)
     if (this.equipped) {
       const elapsed = performance.now() - this.swingAt;
+      // 0~350ms: 뒤로 젖혔다가 앞으로 크게 휘두름
       this.equipped.group.rotation.x =
-        elapsed < 350 ? -0.4 + Math.sin((elapsed / 350) * Math.PI) * -1.6 : -0.4;
+        elapsed < 350 ? -0.9 + Math.sin((elapsed / 350) * Math.PI) * 1.5 : -0.9;
     }
 
     // 상호작용 힌트 (0.15초 주기 갱신)
@@ -899,8 +958,8 @@ export class GameViews {
     if (this.equipped) this.player.mesh.remove(this.equipped.group);
     const mesh = buildToolMesh(toolId);
     if (!mesh) return;
-    mesh.position.set(0.55, 1.25, 0.25);
-    mesh.rotation.set(-0.4, 0, -0.15);
+    mesh.position.set(0.55, 1.3, 0.25);
+    mesh.rotation.set(-0.9, 0, -0.15);
     this.player.mesh.add(mesh);
     this.equipped = { toolId, group: mesh };
     this.onToast(`🔨 ${TOOL_NAMES[toolId] ?? toolId} 장착 — 좌클릭으로 사용`);

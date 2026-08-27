@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { Game } from '../src/core/GameState';
 import { BotBrain } from '../src/core/Bots';
-import { baseCenter, inBaseZone } from '../src/core/Layout';
+import { baseCenter, baseFront, inBaseZone } from '../src/core/Layout';
 import { lockBase } from '../src/core/BaseLock';
 import { tryPickUp } from '../src/core/Carry';
 
@@ -50,7 +50,7 @@ describe('raider bot', () => {
     const brain = brainFor(g, 'b1'); // b1 = raider
     const intent = brain.update(g);
     expect(intent.moveTo).not.toBeNull();
-    const target = baseCenter(2);
+    const target = baseFront(2);
     expect(intent.moveTo!.x).toBeCloseTo(target.x, 0);
     expect(intent.moveTo!.z).toBeCloseTo(target.z, 0);
   });
@@ -82,8 +82,8 @@ describe('raider bot', () => {
     const prized = g.spawnOnCarpet('epic')!;
     g.buy('b2', prized.uid);
     g.tick(2500);
-    // b1(raider)을 b2 기지로 이동
-    const c = baseCenter(2);
+    // b1(raider)을 b2 기지 전시장으로 이동
+    const c = baseFront(2);
     g.state.positions.b1 = { x: c.x, z: c.z };
     const brain = brainFor(g, 'b1');
     const intent = brain.update(g);
@@ -100,7 +100,7 @@ describe('raider bot', () => {
     tryPickUp(g, 'b1', inst.uid);
     const brain = brainFor(g, 'b1');
     const intent = brain.update(g);
-    const home = baseCenter(1);
+    const home = baseFront(1);
     expect(intent.moveTo!.x).toBeCloseTo(home.x, 0);
     expect(intent.moveTo!.z).toBeCloseTo(home.z, 0);
   });

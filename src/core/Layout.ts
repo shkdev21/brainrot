@@ -39,6 +39,12 @@ export function baseCenter(i: number): P2 {
   return { x: side * ((PLOT_INNER_X + PLOT_OUTER_X) / 2), z };
 }
 
+/** 기지 전면 전시장 지점 (차단벽 앞, 실제 생활 영역) */
+export function baseFront(i: number): P2 {
+  const c = baseCenter(i);
+  return { x: c.x > 0 ? PLOT_INNER_X + 4 : -(PLOT_INNER_X + 4), z: c.z };
+}
+
 export function baseDoor(i: number): P2 {
   const c = baseCenter(i);
   const side = baseSide(i);
