@@ -24,6 +24,7 @@ import { HUD } from '../ui/HUD';
 import { Toasts } from '../ui/Toasts';
 import { Shop } from '../ui/Shop';
 import { RebirthPanel } from '../ui/RebirthPanel';
+import { InventoryModal } from '../ui/InventoryModal';
 import { AuctionPanel } from '../ui/AuctionPanel';
 import { AuctionManager } from '../core/Auction';
 import { save as saveGame, load as loadGame, apply as applySave, resetSave } from '../core/Save';
@@ -85,6 +86,7 @@ export class GameViews {
   private lastRaidToastAt = 0;
   private shop: Shop;
   private rebirthPanel: RebirthPanel;
+  private inventory: InventoryModal;
   onToast: (msg: string) => void = () => {};
 
   constructor(
@@ -214,6 +216,8 @@ export class GameViews {
     uiRoot.appendChild(this.interactHint);
     this.shop = new Shop(uiRoot, this.game, this.onToast);
     this.rebirthPanel = new RebirthPanel(uiRoot, this.game, this.onToast);
+    this.inventory = new InventoryModal(uiRoot, this.game, this.onToast, (toolId) => this.toggleEquip(toolId));
+    this.hud.onSlotGroupTap = () => this.toggleInventory();
     this.auction = new AuctionManager(this.game, (seed ?? 1) * 7717);
     new AuctionPanel(uiRoot, this.game, this.auction, this.onToast);
     ev.on('auction-started', ({ defId, startPrice }) => {
@@ -277,6 +281,10 @@ export class GameViews {
     this.rebirthPanel.toggle(open);
   }
 
+  toggleInventory(open?: boolean): void {
+    this.inventory.toggle(open);
+  }
+
   // ── 상호작용 바인딩 ─────────────────────────────────────
 
   private bindInteractions(): void {
@@ -287,6 +295,9 @@ export class GameViews {
       if (e.code === 'KeyE') this.triggerInteract();
       if (e.code === 'KeyF') this.triggerLock();
       if (e.code === 'KeyQ') this.triggerSwing();
+      if (e.code === 'KeyB') this.toggleShop();
+      if (e.code === 'KeyR') this.toggleRebirth();
+      if (e.code === 'KeyI') this.toggleInventory();
 
       // 도구 단축키 1~0 — 장착/해제 토글 (원작식: 장착 유지)
       const idx = ['Digit1','Digit2','Digit3','Digit4','Digit5','Digit6','Digit7','Digit8','Digit9','Digit0'].indexOf(e.code);

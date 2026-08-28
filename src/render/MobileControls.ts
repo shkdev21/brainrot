@@ -47,6 +47,7 @@ export class MobileControls {
     this.addButton('KeyQ', '휘두르기', 112, 44, 58, '#e17055', 'bottom');
     this.addButton('KeyF', '잠금', 30, 122, 54, '#4da6ff', 'bottom');
     this.addButton('Space', '점프', 116, 122, 54, '#f1c40f', 'bottom');
+    this.addButton('KeyI', '아이템', 16, undefined, 46, '#00cec9', 'top', 64);
     this.addButton('KeyB', '상점', 16, undefined, 46, '#b44dff', 'top', 118);
     this.addButton('KeyR', '환생', 16, undefined, 46, '#e056fd', 'top', 172);
 
@@ -94,6 +95,9 @@ export class MobileControls {
           break;
         case 'Space':
           this.pc.setJump(true);
+          break;
+        case 'KeyI':
+          this.views.toggleInventory();
           break;
         case 'KeyB':
           this.views.toggleShop();

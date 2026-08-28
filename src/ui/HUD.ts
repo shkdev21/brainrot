@@ -25,13 +25,15 @@ export class HUD {
 
   /** 슬롯 탭 → 도구 장착 토글 (모바일에서 1~0 키 대체) */
   onSlotTap: ((index: number) => void) | null = null;
+  /** 보유 슬롯(📦) 영역 탭 → 아이템/브레인롯 목록 모달 */
+  onSlotGroupTap: (() => void) | null = null;
 
   constructor(parent: HTMLElement) {
     parent.insertAdjacentHTML('beforeend', `
       <div id="hud" class="panel">
         <div class="money">$0</div>
         <div class="row">⚡ <span class="income">$0/s</span> · <span class="rebirth">환생 0</span></div>
-        <div class="row">📦 <span id="hud-slots">0/10</span></div>
+        <div class="row" id="hud-slots-row" style="cursor:pointer" title="클릭하여 아이템 목록 보기">📦 <span id="hud-slots">0/10</span> <small style="color:#74b9ff;font-size:11px">[목록]</small></div>
       </div>
       <div id="carry-banner" class="panel">🥷 운반 중 — <span id="carry-name"></span> · <span style="color:#74b9ff">[E] 내려놓기</span> / 기지로 돌아가!</div>
       <div id="lock-banner" class="panel" style="position:fixed;top:14px;right:14px;padding:8px 18px;font-weight:800;font-size:16px;color:#ff6b6b;display:none;border-color:rgba(255,107,107,.5)">🔒 기지 잠금 <span id="lock-remain"></span></div>
@@ -41,7 +43,7 @@ export class HUD {
         <div><b>WASD / 방향키</b> 이동 · <b>Space</b> 점프</div>
         <div><b>E</b> 구매 / 훔치기 / 내려놓기</div>
         <div><b>Q / 좌클릭</b> 도구 휘두르기 · <b>1~0</b> 도구 선택</div>
-        <div><b>F</b> 기지 잠금 (패드) · <b>B</b> 상점 · <b>R</b> 환생</div>
+        <div><b>I</b> 아이템 목록 · <b>F</b> 기지 잠금 · <b>B</b> 상점 · <b>R</b> 환생</div>
       </div>
     `);
     this.moneyEl = parent.querySelector('#hud .money')!;
@@ -53,6 +55,10 @@ export class HUD {
     this.lockBanner = parent.querySelector('#lock-banner')!;
     this.lockRemain = parent.querySelector('#lock-remain')!;
     this.toolbar = parent.querySelector('#toolbar')!;
+
+    parent.querySelector('#hud-slots-row')?.addEventListener('click', () => {
+      this.onSlotGroupTap?.();
+    });
   }
 
   update(g: Game, incomePerSec: number, owned: number, equippedToolId?: string): void {
