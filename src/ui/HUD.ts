@@ -30,7 +30,7 @@ export class HUD {
         <div class="row">⚡ <span class="income">$0/s</span> · <span class="rebirth">환생 0</span></div>
         <div class="row">📦 <span id="hud-slots">0/10</span></div>
       </div>
-      <div id="carry-banner" class="panel">🥷 운반 중 — <span id="carry-name"></span> · 기지로 돌아가!</div>
+      <div id="carry-banner" class="panel">🥷 운반 중 — <span id="carry-name"></span> · <span style="color:#74b9ff">[E] 내려놓기</span> / 기지로 돌아가!</div>
       <div id="lock-banner" class="panel" style="position:fixed;top:14px;right:14px;padding:8px 18px;font-weight:800;font-size:16px;color:#ff6b6b;display:none;border-color:rgba(255,107,107,.5)">🔒 기지 잠금 <span id="lock-remain"></span></div>
       <div id="toolbar" class="panel"></div>
       <div id="hints">

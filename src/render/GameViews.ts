@@ -8,7 +8,7 @@ import { MUTATION_BY_ID } from '../data/mutations';
 import { displayName } from '../core/names';
 import { hashStr } from '../core/rng';
 import { formatMoney, instanceIncome } from '../core/Economy';
-import { tryPickUp, arriveOwnBase, droppedPositions } from '../core/Carry';
+import { tryPickUp, arriveOwnBase, dropCarried, droppedPositions } from '../core/Carry';
 import { lockBase, canEnterBase, isBaseLocked } from '../core/BaseLock';
 import { useTool, purchaseTool } from '../core/ToolEffects';
 import { BotBrain, type BotIntent } from '../core/Bots';
@@ -388,7 +388,12 @@ export class GameViews {
     const g = this.game;
     const p = g.player('p0')!;
     const found = this.findInteract(ppos);
-    if (!found.kind || p.carrying) {
+    if (p.carrying) {
+      this.interactHint.textContent = '[E] 내려놓기';
+      this.interactHint.style.display = 'block';
+      return;
+    }
+    if (!found.kind) {
       this.interactHint.style.display = 'none';
       return;
     }
@@ -410,11 +415,21 @@ export class GameViews {
     this.interactHint.style.display = 'block';
   }
 
-  /** E 키 — 상황별 구매/훔치기/회수 (항상 피드백) */
+  /** E 키 — 상황별 구매/훔치기/내려놓기 (항상 피드백) */
   private tryInteract(): void {
     const g = this.game;
     const p = g.player('p0')!;
     if (g.state.timeMs < p.stunUntil) return;
+
+    // 운반 중이면 내려놓기 (자기 기지 안에선 자동 이전이 먼저 처리되므로 밖에서만 유효)
+    if (p.carrying) {
+      const carried = g.instance(p.carrying);
+      const name = carried ? displayName(carried.defId) : '브레인롯';
+      dropCarried(g, 'p0', 'manual');
+      this.onToast(`🫳 ${name} 내려놓음 — 누구나 주울 수 있어요!`);
+      return;
+    }
+
     const ppos = { x: this.player.pos.x, z: this.player.pos.z };
     const found = this.findInteract(ppos);
 
