@@ -93,6 +93,12 @@ export class HUD {
 
   private updateToolbar(p: PlayerState, equippedToolId?: string): void {
     const tools = p.purchasedTools.slice(0, 10);
+    if (tools.length === 0) {
+      this.toolbar.style.display = 'none';
+      return;
+    }
+    this.toolbar.style.display = 'flex';
+
     // 슬롯 수 고정 (10)
     while (this.toolSlots.length < 10) {
       const el = document.createElement('div');

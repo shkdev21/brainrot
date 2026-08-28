@@ -311,23 +311,27 @@ body.mobile #auction-panel .btn {
 }
 
 body.mobile #toolbar {
-  left: auto;
-  right: max(8px, env(safe-area-inset-right));
-  bottom: 190px;
-  transform: none;
-  flex-wrap: wrap;
-  width: 216px;
-  padding: 5px;
-  gap: 4px;
+  left: 50%;
+  right: auto;
+  bottom: max(14px, env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  flex-wrap: nowrap;
+  width: auto;
+  max-width: 90vw;
+  padding: 4px 6px;
+  gap: 6px;
   justify-content: center;
   z-index: 7;
 }
 body.mobile .tool-slot {
-  width: 38px;
-  height: 38px;
-  font-size: 17px;
+  width: 42px;
+  height: 42px;
+  font-size: 19px;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
+}
+body.mobile .tool-slot.empty {
+  display: none !important;
 }
 body.mobile .tool-slot .hotkey {
   font-size: 8px;
