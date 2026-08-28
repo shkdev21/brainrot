@@ -37,6 +37,7 @@ export class PlayerController {
   private lastMouse: { x: number; y: number } | null = null;
   private knockback = new THREE.Vector3();
   private walkPhase = 0;
+  private analogVec: { x: number; z: number } = { x: 0, z: 0 };
 
   constructor(
     private camera: THREE.PerspectiveCamera,
@@ -76,6 +77,22 @@ export class PlayerController {
       this.camDist = Math.max(5, Math.min(28, this.camDist + e.deltaY * 0.01));
     });
     this.dom.addEventListener('contextmenu', (e) => e.preventDefault());
+  }
+
+  /** 모바일 조이스틱 아날로그 입력 (화면 위=전방) */
+  setAnalog(x: number, z: number): void {
+    this.analogVec = { x, z };
+  }
+
+  /** 터치 카메라 궤도 */
+  orbit(dx: number, dy: number): void {
+    this.camYaw -= dx;
+    this.camPitch = Math.max(0.08, Math.min(1.35, this.camPitch + dy));
+  }
+
+  /** 핀치 줌 */
+  zoom(d: number): void {
+    this.camDist = Math.max(5, Math.min(28, this.camDist + d));
   }
 
   readInput(): PlayerInput {
@@ -123,6 +140,14 @@ export class PlayerController {
       if (input.back) sz -= 1;
       if (input.right) sx += 1;
       if (input.left) sx -= 1;
+      // 조이스틱 아날로그 입력 우선
+      const alen = Math.hypot(this.analogVec.x, this.analogVec.z);
+      if (alen > 0.15) {
+        sx = this.analogVec.x;
+        sz = this.analogVec.z;
+        const l2 = Math.hypot(sx, sz);
+        sx /= l2; sz /= l2;
+      }
       if (sx !== 0 || sz !== 0) {
         const len = Math.hypot(sx, sz);
         sx /= len;

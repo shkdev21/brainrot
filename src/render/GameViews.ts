@@ -60,7 +60,7 @@ interface BotView {
 
 export class GameViews {
   readonly game: Game;
-  private player: PlayerController;
+  readonly player: PlayerController;
   private brainrotViews = new Map<string, BrainrotView>();
   private botViews: BotView[] = [];
   private labelCache = new Map<string, THREE.Sprite>();
