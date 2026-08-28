@@ -66,9 +66,9 @@ export function apply(g: Game, data: SaveData): void {
   g.state.auction = null;
   g.state.players = data.players.map((pl) => ({ ...pl, carrying: null }));
   g.state.bases = data.bases;
-  // 운반 중이던 브레인롯은 저장 시 소멸 (원작: 접속 종료 = 훔치기 무효)
+  // 운반 중이거나 카펫 위에 있던 브레인롯은 불러올 때 정리 (카펫은 tick에서 자연 스폰)
   g.state.brainrots = data.brainrots
-    .filter((i) => i.location !== 'carried')
+    .filter((i) => i.location !== 'carried' && i.location !== 'carpet')
     .map((i) => ({ ...i }));
   // 오래된 저장의 위치 맵 정리 (봇은 뷰가 다시 기록)
   for (const p of g.state.players) {

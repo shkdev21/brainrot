@@ -95,13 +95,20 @@ export class PlayerController {
     this.camDist = Math.max(5, Math.min(28, this.camDist + d));
   }
 
+  private touchJump = false;
+
+  /** 모바일 점프 버튼 상태 설정 */
+  setJump(pressed: boolean): void {
+    this.touchJump = pressed;
+  }
+
   readInput(): PlayerInput {
     return {
       forward: this.keys.has('KeyW') || this.keys.has('ArrowUp'),
       back: this.keys.has('KeyS') || this.keys.has('ArrowDown'),
       left: this.keys.has('KeyA') || this.keys.has('ArrowLeft'),
       right: this.keys.has('KeyD') || this.keys.has('ArrowRight'),
-      jump: this.keys.has('Space'),
+      jump: this.keys.has('Space') || this.touchJump,
       sprint: this.keys.has('ShiftLeft') || this.keys.has('ShiftRight'),
     };
   }

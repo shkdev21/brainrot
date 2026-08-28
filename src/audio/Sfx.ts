@@ -8,11 +8,27 @@ export class Sfx {
   private ctx: AudioContext | null = null;
   muted = false;
 
+  constructor() {
+    // 모바일 브라우저 AudioContext 잠금 해제 (첫 인터랙션 시 자동 resume)
+    const unlock = () => {
+      if (this.ctx && this.ctx.state === 'suspended') {
+        void this.ctx.resume();
+      }
+      window.removeEventListener('touchstart', unlock);
+      window.removeEventListener('pointerdown', unlock);
+      window.removeEventListener('keydown', unlock);
+    };
+    window.addEventListener('touchstart', unlock, { passive: true });
+    window.addEventListener('pointerdown', unlock, { passive: true });
+    window.addEventListener('keydown', unlock, { passive: true });
+  }
+
   private ensure(): AudioContext | null {
     if (this.muted) return null;
     if (!this.ctx) {
       try {
-        this.ctx = new AudioContext();
+        const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+        this.ctx = new AudioCtx();
       } catch {
         return null;
       }

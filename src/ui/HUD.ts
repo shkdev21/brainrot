@@ -23,6 +23,9 @@ export class HUD {
   private lockBanner: HTMLDivElement;
   private lockRemain: HTMLSpanElement;
 
+  /** 슬롯 탭 → 도구 장착 토글 (모바일에서 1~0 키 대체) */
+  onSlotTap: ((index: number) => void) | null = null;
+
   constructor(parent: HTMLElement) {
     parent.insertAdjacentHTML('beforeend', `
       <div id="hud" class="panel">
@@ -50,7 +53,7 @@ export class HUD {
     this.toolbar = parent.querySelector('#toolbar')!;
   }
 
-  update(g: Game, incomePerSec: number, owned: number): void {
+  update(g: Game, incomePerSec: number, owned: number, equippedToolId?: string): void {
     const p = g.player('p0');
     if (!p) return;
     this.moneyEl.textContent = formatMoney(p.money);
@@ -77,10 +80,10 @@ export class HUD {
       this.lockBanner.style.display = 'none';
     }
 
-    this.updateToolbar(p);
+    this.updateToolbar(p, equippedToolId);
   }
 
-  private updateToolbar(p: PlayerState): void {
+  private updateToolbar(p: PlayerState, equippedToolId?: string): void {
     const tools = p.purchasedTools.slice(0, 10);
     // 슬롯 수 고정 (10)
     while (this.toolSlots.length < 10) {
@@ -97,10 +100,16 @@ export class HUD {
         el.innerHTML = '';
         continue;
       }
-      el.className = 'tool-slot';
+      el.className = 'tool-slot' + (toolId === equippedToolId ? ' equipped' : '');
       const icon = TOOL_ICONS[toolId] ?? '🔧';
       const cdOverlay = `<div class="cd" data-tool="${toolId}"></div>`;
       el.innerHTML = `<span class="hotkey">${(i + 1) % 10}</span>${icon}${cdOverlay}`;
+      // 탭/클릭 → 장착 토글 (모바일 필수, 데스크톱도 클릭 가능)
+      const idx = i;
+      el.onpointerdown = (e) => {
+        e.stopPropagation();
+        this.onSlotTap?.(idx);
+      };
     }
   }
 

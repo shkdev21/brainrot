@@ -11,6 +11,7 @@ import { RARITY_COLORS } from '../data/brainrots';
 export class AuctionPanel {
   private el: HTMLDivElement;
   private timer: number | null = null;
+  private dismissedAuctionId: string | null = null;
 
   constructor(parent: HTMLElement, private game: Game, private auction: AuctionManager, private onToast: (m: string) => void) {
     this.el = document.createElement('div');
@@ -19,7 +20,15 @@ export class AuctionPanel {
     this.el.style.cssText =
       'position:fixed;bottom:92px;left:50%;transform:translateX(-50%);padding:12px 18px;display:none;min-width:380px;';
     parent.appendChild(this.el);
+
     this.timer = window.setInterval(() => this.render(), 500);
+    this.game.events.on('auction-started', () => {
+      this.dismissedAuctionId = null;
+      this.render();
+    });
+    this.game.events.on('auction-won', () => {
+      this.el.style.display = 'none';
+    });
     this.render();
   }
 
@@ -30,7 +39,7 @@ export class AuctionPanel {
 
   private render(): void {
     const a = this.game.state.auction;
-    if (!a) {
+    if (!a || a.id === this.dismissedAuctionId || this.game.state.timeMs >= a.endsAt) {
       this.el.style.display = 'none';
       return;
     }
@@ -45,32 +54,47 @@ export class AuctionPanel {
       : '없음';
     const rarityHex = `#${RARITY_COLORS[def.rarity]?.toString(16).padStart(6, '0') ?? 'ffffff'}`;
     this.el.innerHTML = `
-      <div style="display:flex;align-items:center;gap:14px">
-        <div style="font-size:34px">🔨</div>
+      <div style="position:relative;display:flex;align-items:center;gap:12px">
+        <div style="font-size:32px">🔨</div>
         <div style="flex:1">
-          <div style="font-weight:800;font-size:16px">
+          <div style="font-weight:800;font-size:15px">
             <span style="color:${rarityHex}">${displayName(a.defId)}</span>
             ${mut ? `<span style="color:#ff9ff3">[${mut.id} ${mut.mult}x]</span>` : ''}
-            <span style="float:right;color:#ffd43b">⏱ ${remain.toFixed(0)}s</span>
+            <span style="float:right;color:#ffd43b;margin-right:20px">⏱ ${remain.toFixed(0)}s</span>
           </div>
-          <div style="font-size:13px;opacity:.85;margin-top:3px">
-            현재 입찰 <b style="color:#2ecc71">${a.currentBid > 0 ? formatMoney(a.currentBid) : formatMoney(a.startPrice)}</b>
-            · 최고 입찰자 <b>${highest}</b>
+          <div style="font-size:12px;opacity:.85;margin-top:2px">
+            현재 <b style="color:#2ecc71">${a.currentBid > 0 ? formatMoney(a.currentBid) : formatMoney(a.startPrice)}</b>
+            · 최고 <b>${highest}</b>
           </div>
         </div>
-        <button class="btn ghost">입찰 ${formatMoney(min)}</button>
+        <button class="btn ghost bid-btn">입찰 ${formatMoney(min)}</button>
+        <div class="auction-close" style="cursor:pointer;font-size:18px;opacity:.65;padding:4px 6px;line-height:1">✕</div>
       </div>
     `;
-    const btn = this.el.querySelector('button')!;
-    btn.disabled = p.money < min;
-    btn.addEventListener('click', () => {
-      const res = this.auction.bid('p0');
-      if (res.ok) {
-        this.onToast(`🔨 입찰 성공! ${formatMoney(min)}`);
-        this.render();
-      } else if (res.reason === 'not-enough-money') {
-        this.onToast('💸 입찰 금액이 부족해요');
-      }
-    });
+
+    const closeBtn = this.el.querySelector('.auction-close') as HTMLElement | null;
+    if (closeBtn) {
+      closeBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.dismissedAuctionId = a.id;
+        this.el.style.display = 'none';
+      });
+      closeBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
+    }
+
+    const btn = this.el.querySelector('.bid-btn') as HTMLButtonElement | null;
+    if (btn) {
+      btn.disabled = p.money < min;
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const res = this.auction.bid('p0');
+        if (res.ok) {
+          this.onToast(`🔨 입찰 성공! ${formatMoney(min)}`);
+          this.render();
+        } else if (res.reason === 'not-enough-money') {
+          this.onToast('💸 입찰 금액이 부족해요');
+        }
+      });
+    }
   }
 }

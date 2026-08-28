@@ -112,14 +112,12 @@ export class BotBrain {
   }
 
   // ── 경제형: 카펫 근처에서 구매만 ─────────────────────────
-  private thinkFarmer(g: Game, me: PlayerState, pos: P2): BotIntent {
+  private thinkFarmer(g: Game, me: PlayerState, _pos: P2): BotIntent {
     const intent: BotIntent = { moveTo: null };
     const buy = this.bestAffordableSpawn(g, me);
     if (buy) {
       intent.buySpawnUid = buy.uid;
-      if (Math.abs(pos.x) > 8 || Math.abs(pos.z) > 24) {
-        intent.moveTo = { x: 0, z: 0 };
-      }
+      intent.moveTo = { x: 0, z: 0 };
     }
     const tool = this.toolToBuy(me);
     if (tool) intent.buyToolId = tool;
@@ -132,10 +130,12 @@ export class BotBrain {
     const tool = this.toolToBuy(me);
     if (tool) intent.buyToolId = tool;
 
-    // 여유 자금이면 근처 카펫 스폰 구매 (집 근처에 있을 때만)
+    // 여유 자금이면 카펫 스폰 구매 (카펫으로 이동)
     const buy = this.bestAffordableSpawn(g, me);
     if (buy && me.money > brainrotById.get(buy.defId)!.price * 3) {
       intent.buySpawnUid = buy.uid;
+      intent.moveTo = { x: 0, z: 0 };
+      return intent;
     }
 
     // 순찰: 기지 주변 배회
