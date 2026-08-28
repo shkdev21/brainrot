@@ -1,4 +1,4 @@
-﻿import type { Game } from '../core/GameState';
+import type { Game } from '../core/GameState';
 import { brainrots, brainrotById, RARITY_COLORS } from '../data/brainrots';
 import { MUTATION_BY_ID } from '../data/mutations';
 import { displayName } from '../core/names';
@@ -8,7 +8,7 @@ import { TOOL_BY_ID } from '../data/tools';
 export class InventoryModal {
   private el: HTMLDivElement;
   private contentEl: HTMLDivElement;
-  private tab = 'owned'; // 'owned' | 'all' | 'tools'
+  private tab = 'tools'; // 'tools' | 'owned' | 'all'
   private open = false;
 
   constructor(
@@ -26,9 +26,9 @@ export class InventoryModal {
         <span class="close">✕</span>
       </header>
       <div style="display:flex;gap:8px;padding:8px 14px;border-bottom:1px solid rgba(255,255,255,0.1);background:rgba(0,0,0,0.2)">
-        <button class="btn tab-btn active" data-tab="owned">내 브레인롯</button>
+        <button class="btn tab-btn active" data-tab="tools">내 도구</button>
+        <button class="btn tab-btn ghost" data-tab="owned">내 브레인롯</button>
         <button class="btn tab-btn ghost" data-tab="all">전체 도감</button>
-        <button class="btn tab-btn ghost" data-tab="tools">내 도구</button>
       </div>
       <div class="body"><div id="inventory-content"></div></div>
     `;
@@ -40,7 +40,7 @@ export class InventoryModal {
     this.el.querySelectorAll('.tab-btn').forEach((btn) => {
       btn.addEventListener('click', (e) => {
         const target = e.currentTarget as HTMLButtonElement;
-        this.tab = target.dataset.tab ?? 'owned';
+        this.tab = target.dataset.tab ?? 'tools';
         this.el.querySelectorAll('.tab-btn').forEach((b) => {
           b.classList.remove('active');
           b.classList.add('ghost');
@@ -65,12 +65,12 @@ export class InventoryModal {
 
   private render(): void {
     const p = this.game.player('p0')!;
-    if (this.tab === 'owned') {
-      this.renderOwned(p);
-    } else if (this.tab === 'all') {
-      this.renderAll();
-    } else {
+    if (this.tab === 'tools') {
       this.renderTools(p);
+    } else if (this.tab === 'owned') {
+      this.renderOwned(p);
+    } else {
+      this.renderAll();
     }
   }
 
