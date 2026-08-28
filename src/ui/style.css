@@ -129,17 +129,32 @@
 }
 .tool-slot.empty { opacity: 0.35; }
 
-/* ── 조작 힌트 ───────────────────────────────── */
+/* ── 조작 힌트 (PC 데스크톱) ─────────────────── */
 #hints {
   position: fixed;
   bottom: 14px;
-  left: 12px;
+  left: 14px;
+  padding: 10px 14px;
   font-size: 12px;
-  opacity: 0.75;
-  line-height: 1.7;
-  text-shadow: 0 1px 2px #000;
+  line-height: 1.6;
+  border-radius: 12px;
+  background: rgba(16, 20, 30, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  color: #e2e8f0;
+  z-index: 6;
+  pointer-events: none;
 }
-#hints b { color: #ffd43b; }
+#hints b {
+  color: #ffd43b;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.08);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+body.mobile #hints {
+  display: none !important;
+}
 
 /* ── 토스트 ──────────────────────────────────── */
 #toasts {

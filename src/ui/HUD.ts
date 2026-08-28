@@ -36,10 +36,12 @@ export class HUD {
       <div id="carry-banner" class="panel">🥷 운반 중 — <span id="carry-name"></span> · <span style="color:#74b9ff">[E] 내려놓기</span> / 기지로 돌아가!</div>
       <div id="lock-banner" class="panel" style="position:fixed;top:14px;right:14px;padding:8px 18px;font-weight:800;font-size:16px;color:#ff6b6b;display:none;border-color:rgba(255,107,107,.5)">🔒 기지 잠금 <span id="lock-remain"></span></div>
       <div id="toolbar" class="panel"></div>
-      <div id="hints">
-        <b>이동</b> WASD/방향키 · <b>점프</b> Space · <b>구매/훔치기</b> E<br>
-        <b>기지 잠금</b> F (패드 위) · <b>상점</b> B · <b>환생</b> R<br>
-        <b>도구 장착</b> 1~0 · <b>휘두르기</b> Q
+      <div id="hints" class="panel">
+        <div style="font-weight:800;color:#74b9ff;margin-bottom:4px;font-size:13px">⌨️ 조작 가이드</div>
+        <div><b>WASD / 방향키</b> 이동 · <b>Space</b> 점프</div>
+        <div><b>E</b> 구매 / 훔치기 / 내려놓기</div>
+        <div><b>Q / 좌클릭</b> 도구 휘두르기 · <b>1~0</b> 도구 선택</div>
+        <div><b>F</b> 기지 잠금 (패드) · <b>B</b> 상점 · <b>R</b> 환생</div>
       </div>
     `);
     this.moneyEl = parent.querySelector('#hud .money')!;

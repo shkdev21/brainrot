@@ -50,11 +50,14 @@ export class MobileControls {
     this.addButton('KeyB', '상점', 16, undefined, 46, '#b44dff', 'top', 118);
     this.addButton('KeyR', '환생', 16, undefined, 46, '#e056fd', 'top', 172);
 
-    // 키보드 힌트 숨김 (버튼이 대체) + 모바일 레이아웃 클래스
+    // 키보드 힌트 표시 제어 (모바일일 때만 숨김)
     const hints = document.getElementById('hints');
-    if (hints) hints.style.display = 'none';
     if (this.visible) {
       document.body.classList.add('mobile');
+      if (hints) hints.style.display = 'none';
+    } else {
+      document.body.classList.remove('mobile');
+      if (hints) hints.style.display = 'block';
     }
 
     this.root.style.display = this.visible ? 'block' : 'none';
@@ -63,9 +66,16 @@ export class MobileControls {
     this.dom.style.touchAction = 'none';
 
     window.addEventListener('resize', () => {
-      if (window.innerWidth <= 840 || (window.matchMedia?.('(pointer: coarse)').matches ?? false)) {
+      const isMobile = window.innerWidth <= 840 || (window.matchMedia?.('(pointer: coarse)').matches ?? false);
+      const h = document.getElementById('hints');
+      if (isMobile) {
         document.body.classList.add('mobile');
         this.root.style.display = 'block';
+        if (h) h.style.display = 'none';
+      } else {
+        document.body.classList.remove('mobile');
+        this.root.style.display = 'none';
+        if (h) h.style.display = 'block';
       }
     });
   }
