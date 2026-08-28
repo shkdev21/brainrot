@@ -9,7 +9,7 @@ import { displayName } from '../core/names';
 import { hashStr } from '../core/rng';
 import { formatMoney, instanceIncome } from '../core/Economy';
 import { tryPickUp, arriveOwnBase, droppedPositions } from '../core/Carry';
-import { lockBase, canEnterBase } from '../core/BaseLock';
+import { lockBase, canEnterBase, isBaseLocked } from '../core/BaseLock';
 import { useTool, purchaseTool } from '../core/ToolEffects';
 import { BotBrain, type BotIntent } from '../core/Bots';
 import { baseCenter, baseFront, inBaseZone, inCarpetZone, dist2d, CARPET_WALK_MS, CARPET_FROM_Z } from '../core/Layout';
@@ -51,6 +51,7 @@ interface BotView {
   mesh: THREE.Group;
   pos: THREE.Vector3;
   brain: BotBrain;
+  toolMesh: THREE.Group | null;
   target: { x: number; z: number } | null;
   /** 문 경유 경로 큐 — 순서대로 밟고 소진 후 target으로 직행 */
   path: { x: number; z: number }[];
@@ -112,6 +113,7 @@ export class GameViews {
       this.botViews.push({
         id, mesh, pos: new THREE.Vector3(sx, 0, c.z),
         brain: new BotBrain(id, (seed ?? 1) * 131 + i * 977),
+        toolMesh: null,
         target: null,
         path: [],
         pathFor: null,
@@ -355,7 +357,9 @@ export class GameViews {
     });
     if (!res.ok && res.reason === 'on-cooldown') this.onToast('⏳ 쿨타임 중입니다');
     if (!res.ok && res.reason === 'carrying') this.onToast('🫳 운반 중에는 도구를 쓸 수 없어요');
-    if (res.ok && res.hits && res.hits.length > 0) this.onToast('💥 적중!');
+    if (res.ok && res.hits && res.hits.length > 0) {
+      this.sfx.play('hit');
+    }
   }
 
   /** 주변 상호작용 대상 탐색 (E 힌트/실행 공용) */
@@ -807,6 +811,28 @@ export class GameViews {
           bv.pos.x += (dx / len) * speed * dt;
           bv.pos.z += (dz / len) * speed * dt;
           bv.mesh.rotation.y = Math.atan2(dx, dz);
+        }
+      }
+      // 잠긴 타인 기지는 물리 차단 (플레이어와 동일 규칙)
+      for (const base of this.game.state.bases) {
+        if (base.ownerId === bv.id) continue;
+        if (!isBaseLocked(this.game, base.id)) continue;
+        if (!inBaseZone({ x: bv.pos.x, z: bv.pos.z }, base.id, 1)) continue;
+        const c = baseCenter(base.id);
+        const dx = bv.pos.x - c.x;
+        const dz = bv.pos.z - c.z;
+        const len = Math.hypot(dx, dz) || 1;
+        bv.pos.x += (dx / len) * 14 * dt;
+        bv.pos.z += (dz / len) * 14 * dt;
+      }
+      // 소유한 도구를 손에 표시 (봇도 장착이 보이게)
+      if (!bv.toolMesh && me.purchasedTools.length > 0) {
+        const tm = buildToolMesh(me.purchasedTools[0]);
+        if (tm) {
+          tm.position.set(0.55, 1.3, 0.25);
+          tm.rotation.set(-0.9, 0, -0.15);
+          bv.mesh.add(tm);
+          bv.toolMesh = tm;
         }
       }
       resolveCollisions(bv.pos, 0.6, this.map.colliders);

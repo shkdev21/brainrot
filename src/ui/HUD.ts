@@ -20,6 +20,8 @@ export class HUD {
   private toolbar: HTMLDivElement;
   private toolSlots: HTMLDivElement[] = [];
   private carryLabel: HTMLSpanElement;
+  private lockBanner: HTMLDivElement;
+  private lockRemain: HTMLSpanElement;
 
   constructor(parent: HTMLElement) {
     parent.insertAdjacentHTML('beforeend', `
@@ -29,6 +31,7 @@ export class HUD {
         <div class="row">📦 <span id="hud-slots">0/10</span></div>
       </div>
       <div id="carry-banner" class="panel">🥷 운반 중 — <span id="carry-name"></span> · 기지로 돌아가!</div>
+      <div id="lock-banner" class="panel" style="position:fixed;top:14px;right:14px;padding:8px 18px;font-weight:800;font-size:16px;color:#ff6b6b;display:none;border-color:rgba(255,107,107,.5)">🔒 기지 잠금 <span id="lock-remain"></span></div>
       <div id="toolbar" class="panel"></div>
       <div id="hints">
         <b>이동</b> WASD/방향키 · <b>점프</b> Space · <b>구매/훔치기</b> E<br>
@@ -42,6 +45,8 @@ export class HUD {
     this.slotEl = parent.querySelector('#hud-slots')!;
     this.carryEl = parent.querySelector('#carry-banner')!;
     this.carryLabel = parent.querySelector('#carry-name')!;
+    this.lockBanner = parent.querySelector('#lock-banner')!;
+    this.lockRemain = parent.querySelector('#lock-remain')!;
     this.toolbar = parent.querySelector('#toolbar')!;
   }
 
@@ -60,6 +65,16 @@ export class HUD {
       if (inst) this.carryLabel.textContent = displayName(inst.defId);
     } else {
       this.carryEl.style.display = 'none';
+    }
+
+    // 잠금 카운트다운
+    const locked = g.state.timeMs < g.base(p.baseId)!.lockedUntil;
+    if (locked) {
+      const remain = Math.ceil((g.base(p.baseId)!.lockedUntil - g.state.timeMs) / 1000);
+      this.lockBanner.style.display = 'block';
+      this.lockRemain.textContent = `${remain}초`;
+    } else {
+      this.lockBanner.style.display = 'none';
     }
 
     this.updateToolbar(p);

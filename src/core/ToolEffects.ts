@@ -82,11 +82,11 @@ export function useTool(
         const opos = g.state.positions[o.id];
         if (!opos) continue;
         if (dist2(myPos, opos) > range2) continue;
-        // 조준 방향 부합(전방 180도)
+        // 조준 방향 부합(전방 약 200도 — 휘두르기 관대한 판정)
         const dx = opos.x - myPos.x;
         const dz = opos.z - myPos.z;
         const dot = dx * ctx.aimDir.x + dz * ctx.aimDir.z;
-        if (dot < 0) continue;
+        if (dot < -0.35) continue;
         applyStun(g, o.id, def.powerMs, toolId);
         g.events.emit('knockback', { targetId: o.id, dir: ctx.aimDir, force: 12 });
         hits.push(o.id);

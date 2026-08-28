@@ -6,7 +6,7 @@ import type { ToolDef } from '../core/types';
 export const TOOLS: ToolDef[] = [
   {
     id: 'bat', name: '방망이', unlockRebirth: 0, price: 500, kind: 'melee',
-    cooldownMs: 2000, powerMs: 1500, range: 3,
+    cooldownMs: 2000, powerMs: 1500, range: 3.5,
     desc: '앞을 휘둘러 맞은 대상을 밀쳐내고 잠깐 기절시킨다',
   },
   {

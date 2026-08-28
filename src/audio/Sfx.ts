@@ -2,7 +2,7 @@
 
 type SfxName =
   | 'buy' | 'steal' | 'stunned' | 'rebirth' | 'auction'
-  | 'lock' | 'error' | 'income';
+  | 'lock' | 'error' | 'income' | 'hit';
 
 export class Sfx {
   private ctx: AudioContext | null = null;
@@ -94,6 +94,10 @@ export class Sfx {
         break;
       case 'income':
         this.tone(1047, 0, 0.05, 'sine', 0.025);
+        break;
+      case 'hit':
+        this.tone(320, 0, 0.07, 'square', 0.06);
+        this.noise(0, 0.08, 0.05);
         break;
     }
   }
