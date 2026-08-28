@@ -159,26 +159,25 @@ export class MobileControls {
   }
 
   private bindTouch(): void {
-    const isUiTouch = (t: EventTarget | null): boolean => {
+    const isModalOpen = (): boolean => document.querySelector('.modal.open') !== null;
+
+    const isInteractiveUi = (t: EventTarget | null): boolean => {
       if (!t || !(t instanceof HTMLElement)) return false;
-      // 모달 내부이거나 UI 버튼, 툴바 슬롯 등인 경우
       return t.closest('.modal') !== null ||
              t.closest('#toolbar') !== null ||
-             t.closest('#hud') !== null ||
-             t.closest('#auction-panel') !== null ||
-             t.parentElement === this.root;
+             t.closest('#hud-slots-row') !== null ||
+             t.closest('#auction-panel') !== null;
     };
 
-    this.dom.addEventListener('touchstart', (e) => {
-      // 모달이 열려있으면 캔버스 조작 차단
-      if (document.querySelector('.modal.open')) return;
+    window.addEventListener('touchstart', (e) => {
+      if (isModalOpen()) return;
 
+      const halfW = window.innerWidth * 0.5;
       for (const t of Array.from(e.changedTouches)) {
-        if (isUiTouch(t.target)) continue;
-        e.preventDefault();
+        if (isInteractiveUi(t.target)) continue;
 
-        // 화면 왼쪽 45% → 조이스틱, 나머지 → 카메라
-        if (t.clientX < window.innerWidth * 0.45 && this.joyTouchId === null) {
+        // 화면 좌측(또는 조이스틱 미할당 시 좌측) → 조이스틱
+        if (t.clientX < halfW && this.joyTouchId === null) {
           this.joyTouchId = t.identifier;
           this.joyAnchor = { x: t.clientX, y: t.clientY };
           this.joyBase.style.display = 'block';
@@ -187,28 +186,34 @@ export class MobileControls {
           this.joyKnob.style.display = 'block';
           this.joyKnob.style.left = `${t.clientX - 26}px`;
           this.joyKnob.style.top = `${t.clientY - 26}px`;
+          this.pc.setAnalog(0, 0);
         } else if (this.camTouchId === null) {
+          // 화면 우측(또는 조이스틱 이외의 터치) → 카메라 회전
           this.camTouchId = t.identifier;
           this.camLast = { x: t.clientX, y: t.clientY };
         }
       }
     }, { passive: false });
 
-    this.dom.addEventListener('touchmove', (e) => {
-      if (document.querySelector('.modal.open')) return;
+    window.addEventListener('touchmove', (e) => {
+      if (isModalOpen()) return;
 
-      const touches = Array.from(e.changedTouches);
-      // 핀치 줌 — 두 손가락
-      if (e.touches.length === 2) {
-        const [a, b] = Array.from(e.touches);
-        const d = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
-        if (this.pinchDist !== null) {
-          this.pc.zoom((this.pinchDist - d) * 0.04);
+      const touches = Array.from(e.touches);
+      // 핀치 줌 — 두 손가락 (우측 영역)
+      if (touches.length >= 2 && this.camTouchId !== null) {
+        const rightTouches = touches.filter((t) => t.clientX >= window.innerWidth * 0.4);
+        if (rightTouches.length >= 2) {
+          const [a, b] = rightTouches;
+          const d = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+          if (this.pinchDist !== null) {
+            this.pc.zoom((this.pinchDist - d) * 0.04);
+          }
+          this.pinchDist = d;
+          return;
         }
-        this.pinchDist = d;
-        return;
       }
       this.pinchDist = null;
+
       for (const t of touches) {
         if (t.identifier === this.joyTouchId) {
           const dx = t.clientX - this.joyAnchor.x;
@@ -223,13 +228,15 @@ export class MobileControls {
           this.joyKnob.style.left = `${this.joyAnchor.x + (len > 0 ? (dx / len) * cl : 0) - 26}px`;
           this.joyKnob.style.top = `${this.joyAnchor.y + (len > 0 ? (dy / len) * cl : 0) - 26}px`;
         } else if (t.identifier === this.camTouchId) {
-          this.pc.orbit((t.clientX - this.camLast.x) * 0.006, (t.clientY - this.camLast.y) * 0.004);
+          const dx = t.clientX - this.camLast.x;
+          const dy = t.clientY - this.camLast.y;
+          this.pc.orbit(dx * 0.008, dy * 0.005);
           this.camLast = { x: t.clientX, y: t.clientY };
         }
       }
     }, { passive: false });
 
-    const end = (e: TouchEvent) => {
+    const handleEnd = (e: TouchEvent) => {
       for (const t of Array.from(e.changedTouches)) {
         if (t.identifier === this.joyTouchId) {
           this.joyTouchId = null;
@@ -243,8 +250,9 @@ export class MobileControls {
       }
       if (e.touches.length < 2) this.pinchDist = null;
     };
-    this.dom.addEventListener('touchend', end);
-    this.dom.addEventListener('touchcancel', end);
+
+    window.addEventListener('touchend', handleEnd);
+    window.addEventListener('touchcancel', handleEnd);
   }
 
   /** 데스크톱 테스트용 강제 표시 */
